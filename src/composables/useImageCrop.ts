@@ -136,11 +136,7 @@ export const useImageCrop = (nodeId: NodeId) => {
   }
 
   const updateImageUrl = () => {
-    const nextUrl = getInputImageUrl()
-    if (nextUrl !== imageUrl.value) {
-      imageUrl.value = nextUrl
-      isLoading.value = !!nextUrl
-    }
+    imageUrl.value = getInputImageUrl()
   }
 
   const updateDisplayedDimensions = () => {
