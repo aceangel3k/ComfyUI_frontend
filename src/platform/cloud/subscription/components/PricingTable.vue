@@ -261,6 +261,7 @@ import type {
   TierPricing
 } from '@/platform/cloud/subscription/constants/tierPricing'
 import { performSubscriptionCheckout } from '@/platform/cloud/subscription/utils/subscriptionCheckoutUtil'
+import type { TierKey } from '@/platform/cloud/subscription/utils/subscriptionCheckoutUtil'
 import { isCloud } from '@/platform/distribution/types'
 import type { components } from '@/types/comfyRegistryTypes'
 
