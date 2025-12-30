@@ -212,6 +212,8 @@
     "running": "正在运行",
     "save": "保存",
     "saving": "正在保存",
+    "scrollLeft": "向左滚动",
+    "scrollRight": "向右滚动",
     "search": "搜索",
     "searchExtensions": "搜索扩展",
     "searchFailedMessage": "我们找不到任何与您的搜索匹配的设置。请尝试调整您的搜索词。",
@@ -465,6 +467,7 @@
     "inbox": "收件箱",
     "star": "星星"
   },
+<<<<<<< Updated upstream
   "welcome": {
     "getStarted": "开始使用",
     "title": "欢迎使用 ComfyUI"
@@ -496,6 +499,10 @@
     "skip": "跳过",
     "title": "下载 git",
     "warning": "如果您确定不需要安装 git，或者已经安装了 git，您可以点击跳过以绕过此检查。当前不支持在没有可用 git 副本的情况下运行 ComfyUI。"
+=======
+  "imageCompare": {
+    "noImages": "没有可比较的图像"
+>>>>>>> Stashed changes
   },
   "install": {
     "appDataLocationTooltip": "ComfyUI 的应用数据目录。存储：\n- 日志\n- 服务器配置",
@@ -741,6 +748,7 @@
       "viewJobHistory": "查看任务记录"
     },
     "searchAssets": "搜索资产",
+    "sidebar": "侧边栏",
     "templates": "模板",
     "themeToggle": "切换主题",
     "workflowTab": {
@@ -1911,6 +1919,7 @@
       "tooltip": "我们统一了 Comfy 的支付方式。现在全部使用 Comfy 积分 :\n- 合作节点（API节点）\n- Cloud 工作流\n\n您现有的合作伙伴节点积分将自动转换为 Comfy 积分。"
     }
   },
+<<<<<<< Updated upstream
   "subscription": {
     "title": "订阅",
     "titleUnsubscribed": "订阅 Comfy Cloud",
@@ -1940,6 +1949,26 @@
     "nextBillingCycle": "下一个计费周期",
     "yourPlanIncludes": "您的计划包括：",
     "viewMoreDetails": "查看更多详情",
+=======
+  "vueNodesBanner": {
+    "desc": "– 更灵活的工作流程，更强大的新组件，专为可扩展性打造",
+    "title": "介绍 Nodes 2.0",
+    "tryItOut": "试试看"
+  },
+  "vueNodesMigration": {
+    "button": "打开设置",
+    "message": "是否偏好经典节点设计？"
+  },
+  "vueNodesMigrationMainMenu": {
+    "message": "在主菜单中随时切换回 Nodes 2.0"
+  },
+  "welcome": {
+    "getStarted": "开始使用",
+    "title": "欢迎使用 ComfyUI"
+  },
+  "whatsNewPopup": {
+    "later": "Later",
+>>>>>>> Stashed changes
     "learnMore": "了解更多",
     "billedMonthly": "每月付款",
     "billedYearly": "{total} 每年付款",
