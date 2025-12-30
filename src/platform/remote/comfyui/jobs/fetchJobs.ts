@@ -67,7 +67,7 @@ function assignPriority(
 }
 
 /**
- * Fetches history (terminal state jobs: completed, failed)
+ * Fetches history (terminal state jobs: completed, failed, cancelled)
  * Assigns synthetic priority starting from total (lower than queue jobs).
  */
 export async function fetchHistory(
@@ -77,7 +77,7 @@ export async function fetchHistory(
 ): Promise<JobListItem[]> {
   const { jobs, total } = await fetchJobsRaw(
     fetchApi,
-    ['completed', 'failed'],
+    ['completed', 'failed', 'cancelled'],
     maxItems,
     offset
   )
