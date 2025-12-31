@@ -197,6 +197,30 @@ const zComfyOutputTypesSpec = z.array(
   z.union([zComfyNodeDataType, zComfyComboOutput])
 )
 
+/**
+ * Schema for price badge depends_on field.
+ * Specifies which widgets and inputs the pricing expression depends on.
+ */
+const zPriceBadgeDepends = z.object({
+  widgets: z.array(z.string()).optional().default([]),
+  inputs: z.array(z.string()).optional().default([])
+})
+
+/**
+ * Schema for price badge definition.
+ * Used to calculate and display pricing information for API nodes.
+ * The `expr` field contains a JSONata expression that returns a PricingResult.
+ */
+export const zPriceBadge = z.object({
+  engine: z.literal('jsonata').optional().default('jsonata'),
+  depends_on: zPriceBadgeDepends
+    .optional()
+    .default({ widgets: [], inputs: [] }),
+  expr: z.string()
+})
+
+export type PriceBadge = z.infer<typeof zPriceBadge>
+
 export const zComfyNodeDef = z.object({
   input: zComfyInputsSpec.optional(),
   output: zComfyOutputTypesSpec.optional(),
@@ -224,7 +248,13 @@ export const zComfyNodeDef = z.object({
    * Used to ensure consistent widget ordering regardless of JSON serialization.
    * Keys are 'required', 'optional', etc., values are arrays of input names.
    */
-  input_order: z.record(z.array(z.string())).optional()
+  input_order: z.record(z.array(z.string())).optional(),
+  /**
+   * Price badge definition for API nodes.
+   * Contains a JSONata expression to calculate pricing based on widget values
+   * and input connectivity.
+   */
+  price_badge: zPriceBadge.optional()
 })
 
 export const zAutogrowOptions = z.object({
