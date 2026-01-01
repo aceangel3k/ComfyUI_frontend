@@ -64,7 +64,7 @@ export function useDownload(url: string, fileName?: string) {
     error.value = null
 
     try {
-      const response = await fetch('/api/download_model', {
+      const response = await fetch('/download/download_model', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
