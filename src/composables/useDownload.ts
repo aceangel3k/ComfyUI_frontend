@@ -7,9 +7,15 @@ import { downloadUrlToHfRepoUrl, isCivitaiModelUrl } from '@/utils/formatUtil'
 export function useDownload(url: string, fileName?: string) {
   const fileSize = ref<number | null>(null)
   const error = ref<Error | null>(null)
+  const isDownloading = ref(false)
+  const downloadProgress = ref(0)
 
   const setFileSize = (size: number) => {
     fileSize.value = size
+  }
+
+  const setDownloadProgress = (progress: number) => {
+    downloadProgress.value = progress
   }
 
   const fetchFileSize = async () => {
@@ -32,7 +38,7 @@ export function useDownload(url: string, fileName?: string) {
   }
 
   /**
-   * Trigger browser download
+   * Trigger browser download (legacy fallback)
    */
   const triggerBrowserDownload = () => {
     const link = document.createElement('a')
@@ -46,6 +52,51 @@ export function useDownload(url: string, fileName?: string) {
     link.target = '_blank' // Opens in new tab if download attribute is not supported
     link.rel = 'noopener noreferrer' // Security best practice for _blank links
     link.click()
+  }
+
+  /**
+   * Trigger server-side model download to ComfyUI models folder
+   */
+  const triggerServerDownload = async (modelType: string, modelFileName?: string) => {
+    if (isDownloading.value) return
+
+    isDownloading.value = true
+    downloadProgress.value = 0
+    error.value = null
+
+    try {
+      const response = await fetch('/api/download_model', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          url: url,
+          filename: modelFileName || fileName || url.split('/').pop() || 'download',
+          model_type: modelType
+        })
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || `HTTP ${response.status}`)
+      }
+
+      if (result.success) {
+        // Success, but we don't get progress from the current backend implementation
+        downloadProgress.value = 100
+      } else {
+        throw new Error(result.error || 'Download failed')
+      }
+    } catch (e) {
+      console.error('Server download failed:', e)
+      error.value = e instanceof Error ? e : new Error(String(e))
+      // Fallback to browser download if server download fails
+      triggerBrowserDownload()
+    } finally {
+      isDownloading.value = false
+    }
   }
 
   onMounted(() => {
@@ -62,6 +113,9 @@ export function useDownload(url: string, fileName?: string) {
 
   return {
     triggerBrowserDownload,
-    fileSize
+    triggerServerDownload,
+    fileSize,
+    isDownloading,
+    downloadProgress
   }
 }

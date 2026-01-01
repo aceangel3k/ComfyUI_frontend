@@ -23,15 +23,19 @@
     <div>
       <Button
         variant="secondary"
-        :disabled="!!props.error"
+        :disabled="!!props.error || download.isDownloading.value"
         :title="props.url"
-        @click="download.triggerBrowserDownload"
+        @click="handleDownload"
       >
-        {{ $t('g.download') + ' (' + fileSize + ')' }}
+        <span v-if="download.isDownloading.value" class="flex items-center gap-2">
+          <i class="pi pi-spin pi-spinner"></i>
+          Downloading... ({{ download.downloadProgress.value }}%)
+        </span>
+        <span v-else>{{ $t('g.download') + ' (' + fileSize + ')' }}</span>
       </Button>
     </div>
     <div>
-      <Button variant="secondary" :disabled="!!props.error" @click="copyURL">
+      <Button variant="secondary" :disabled="!!props.error || download.isDownloading.value" @click="copyURL">
         {{ $t('g.copyURL') }}
       </Button>
     </div>
@@ -52,6 +56,7 @@ const props = defineProps<{
   hint?: string
   label?: string
   error?: string
+  modelType?: string // New prop for server-side download
 }>()
 
 const label = computed(() => props.label || props.url.split('/').pop())
@@ -61,9 +66,35 @@ const download = useDownload(props.url)
 const fileSize = computed(() =>
   download.fileSize.value ? formatSize(download.fileSize.value) : '?'
 )
+
+const handleDownload = async () => {
+  // Use server-side download if modelType is provided (for missing models dialog)
+  if (props.modelType) {
+    await download.triggerServerDownload(props.modelType, props.label)
+  } else {
+    // Fallback to browser download for other cases
+    download.triggerBrowserDownload()
+  }
+}
+
 const copyURL = async () => {
   await copyToClipboard(props.url)
 }
 
 const { copyToClipboard } = useCopyToClipboard()
 </script>
+
+<style scoped>
+.pi-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+</style>

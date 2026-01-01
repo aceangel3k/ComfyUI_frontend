@@ -25,6 +25,7 @@
         :url="option.url"
         :label="option.label"
         :error="option.error"
+        :model-type="option.directory"
       />
     </template>
   </ListBox>
