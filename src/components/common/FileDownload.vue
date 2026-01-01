@@ -143,7 +143,13 @@ const handleDownload = async () => {
 
   // Only use server-side download if modelType is provided (for missing models dialog)
   if (props.modelType) {
-    await download.triggerServerDownload(props.modelType, props.label)
+    // Extract clean filename from label - remove directory part for backend security
+    // Label format is "directory / filename", we want just the filename part
+    const cleanFilename = props.label?.includes(' / ')
+      ? props.label.split(' / ')[1].trim()
+      : props.label?.split('/').pop() || props.label || 'unknown'
+
+    await download.triggerServerDownload(props.modelType, cleanFilename)
   } else {
     // For other cases without modelType, don't download at all
     console.warn('Download attempted without modelType - not supported')
@@ -155,7 +161,13 @@ const handleRetryDownload = async () => {
   // Clear error and retry server download
   download.error.value = null
   if (props.modelType) {
-    await download.triggerServerDownload(props.modelType, props.label)
+    // Extract clean filename from label - remove directory part for backend security
+    // Label format is "directory / filename", we want just the filename part
+    const cleanFilename = props.label?.includes(' / ')
+      ? props.label.split(' / ')[1].trim()
+      : props.label?.split('/').pop() || props.label || 'unknown'
+
+    await download.triggerServerDownload(props.modelType, cleanFilename)
   }
 }
 
