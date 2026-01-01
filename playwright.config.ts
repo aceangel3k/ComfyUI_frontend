@@ -1,9 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import type { PlaywrightTestConfig } from '@playwright/test'
 
-// Set module type for Playwright
- // Add this to make it a module
-
 const maybeLocalOptions: PlaywrightTestConfig = process.env.PLAYWRIGHT_LOCAL
   ? {
       // VERY HELPFUL: Skip screenshot tests locally

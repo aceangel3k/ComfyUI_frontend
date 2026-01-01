@@ -129,5 +129,3 @@ onlyBuiltDependencies:
 
 overrides:
   '@types/eslint': '-'
-  '@iconify/utils': '^3.0.2'
-  'unplugin-icons': '^22.5.0'
