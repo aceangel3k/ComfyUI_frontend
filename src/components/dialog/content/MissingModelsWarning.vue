@@ -87,7 +87,8 @@ const missingModels = computed(() => {
       return {
         label: `${model.directory} / ${model.name}`,
         url: model.url,
-        error: 'Invalid directory specified (does this require custom nodes?)'
+        error: 'Invalid directory specified (does this require custom nodes?)',
+        directory: model.directory // Always include directory for modelType prop
       }
     }
     const downloadInfo: ModelInfo = modelDownloads.value[model.name] ?? {
@@ -106,14 +107,16 @@ const missingModels = computed(() => {
         return {
           label: `${model.directory} / ${model.name}`,
           url: model.url,
-          error: `Download not allowed from source '${model.url}', only allowed from '${allowedSources.join("', '")}'`
+          error: `Download not allowed from source '${model.url}', only allowed from '${allowedSources.join("', '")}'`,
+          directory: model.directory // Always include directory for modelType prop
         }
       }
       if (!allowedSuffixes.some((suffix) => model.name.endsWith(suffix))) {
         return {
           label: `${model.directory} / ${model.name}`,
           url: model.url,
-          error: `Only allowed suffixes are: '${allowedSuffixes.join("', '")}'`
+          error: `Only allowed suffixes are: '${allowedSuffixes.join("', '")}'`,
+          directory: model.directory // Always include directory for modelType prop
         }
       }
     }
@@ -126,7 +129,8 @@ const missingModels = computed(() => {
       error: downloadInfo.error,
       name: model.name,
       paths: paths,
-      folderPath: downloadInfo.folder_path
+      folderPath: downloadInfo.folder_path,
+      directory: model.directory // Always include directory for modelType prop
     }
   })
 })
