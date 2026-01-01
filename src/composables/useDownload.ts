@@ -2,13 +2,25 @@ import { whenever } from '@vueuse/core'
 import { onMounted, ref } from 'vue'
 
 import { useCivitaiModel } from '@/composables/useCivitaiModel'
-import { downloadUrlToHfRepoUrl, isCivitaiModelUrl } from '@/utils/formatUtil'
+import { isCivitaiModelUrl } from '@/utils/formatUtil'
+
+export interface DownloadStatus {
+  status: 'idle' | 'downloading' | 'completed' | 'error'
+  message: string
+  progress: number
+  filePath?: string
+}
 
 export function useDownload(url: string, fileName?: string) {
   const fileSize = ref<number | null>(null)
   const error = ref<Error | null>(null)
   const isDownloading = ref(false)
   const downloadProgress = ref(0)
+  const downloadStatus = ref<DownloadStatus>({
+    status: 'idle',
+    message: '',
+    progress: 0
+  })
 
   const setFileSize = (size: number) => {
     fileSize.value = size
@@ -34,24 +46,8 @@ export function useDownload(url: string, fileName?: string) {
   }
 
   /**
-   * Trigger browser download (legacy fallback)
-   */
-  const triggerBrowserDownload = () => {
-    const link = document.createElement('a')
-    if (url.includes('huggingface.co') && error.value) {
-      // If model is a gated HF model, send user to the repo page so they can sign in first
-      link.href = downloadUrlToHfRepoUrl(url)
-    } else {
-      link.href = url
-      link.download = fileName || url.split('/').pop() || 'download'
-    }
-    link.target = '_blank' // Opens in new tab if download attribute is not supported
-    link.rel = 'noopener noreferrer' // Security best practice for _blank links
-    link.click()
-  }
-
-  /**
    * Trigger server-side model download to ComfyUI models folder
+   * This is the ONLY download method - no browser downloads
    */
   const triggerServerDownload = async (
     modelType: string,
@@ -62,6 +58,11 @@ export function useDownload(url: string, fileName?: string) {
     isDownloading.value = true
     downloadProgress.value = 0
     error.value = null
+    downloadStatus.value = {
+      status: 'downloading',
+      message: `Starting download to ${modelType} folder...`,
+      progress: 0
+    }
 
     try {
       const response = await fetch('/download/download_model', {
@@ -84,25 +85,45 @@ export function useDownload(url: string, fileName?: string) {
       }
 
       if (result.success) {
-        // Success, but we don't get progress from the current backend implementation
         downloadProgress.value = 100
+        downloadStatus.value = {
+          status: 'completed',
+          message: `Model downloaded successfully to ${result.file_path || modelType}`,
+          progress: 100,
+          filePath: result.file_path
+        }
+        console.warn(
+          `✅ Model downloaded to: ${result.file_path || 'unknown location'}`
+        )
       } else {
         throw new Error(result.error || 'Download failed')
       }
     } catch (e) {
       console.error('Server download failed:', e)
-      error.value = e instanceof Error ? e : new Error(String(e))
-      // Don't automatically fallback to browser download - let user see the error
+      const errorMessage = e instanceof Error ? e.message : String(e)
+      error.value = e instanceof Error ? e : new Error(errorMessage)
+      downloadStatus.value = {
+        status: 'error',
+        message: `Download failed: ${errorMessage}`,
+        progress: downloadProgress.value
+      }
     } finally {
       isDownloading.value = false
     }
   }
 
   /**
-   * Manual fallback to browser download (only called explicitly by user)
+   * Reset download status
    */
-  const triggerManualBrowserDownload = () => {
-    triggerBrowserDownload()
+  const resetDownloadStatus = () => {
+    downloadStatus.value = {
+      status: 'idle',
+      message: '',
+      progress: 0
+    }
+    error.value = null
+    downloadProgress.value = 0
+    isDownloading.value = false
   }
 
   onMounted(() => {
@@ -118,12 +139,12 @@ export function useDownload(url: string, fileName?: string) {
   })
 
   return {
-    triggerBrowserDownload,
     triggerServerDownload,
-    triggerManualBrowserDownload,
+    resetDownloadStatus,
     fileSize,
     isDownloading,
     downloadProgress,
+    downloadStatus,
     error
   }
 }

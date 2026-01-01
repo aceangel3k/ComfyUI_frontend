@@ -19,25 +19,68 @@
           }"
         >
           {{ props.error || download.error.value?.message }}
+          <div
+            v-if="download.downloadStatus.value.message"
+            class="text-xs opacity-75 mt-1"
+          >
+            {{ download.downloadStatus.value.message }}
+          </div>
 
-          <!-- Show fallback option for server download errors -->
+          <!-- Show retry button for server download errors -->
           <div v-if="download.error.value && props.modelType" class="mt-2">
             <Button
               variant="secondary"
               size="sm"
               class="text-xs"
-              @click="handleBrowserDownload"
+              @click="handleRetryDownload"
             >
-              <i class="pi pi-download mr-1"></i>
-              {{ $t('g.downloadToBrowser') }}
+              <i class="pi pi-refresh mr-1"></i>
+              {{ $t('g.retry') }}
             </Button>
+          </div>
+        </Message>
+
+        <!-- Show downloading status -->
+        <Message
+          v-else-if="download.downloadStatus.value.status === 'downloading'"
+          severity="info"
+          icon="pi pi-spin pi-spinner"
+          size="small"
+          variant="outlined"
+          class="my-2 h-min max-w-xs px-1"
+        >
+          {{ download.downloadStatus.value.message }}
+          <div class="text-xs opacity-75 mt-1">
+            {{ $t('g.progress') }} {{ download.downloadProgress.value }}%
+          </div>
+        </Message>
+
+        <!-- Show success message -->
+        <Message
+          v-else-if="download.downloadStatus.value.status === 'completed'"
+          severity="success"
+          icon="pi pi-check-circle"
+          size="small"
+          variant="outlined"
+          class="my-2 h-min max-w-xs px-1"
+        >
+          {{ download.downloadStatus.value.message }}
+          <div
+            v-if="download.downloadStatus.value.filePath"
+            class="text-xs opacity-75 mt-1"
+          >
+            {{ $t('g.location') }} {{ download.downloadStatus.value.filePath }}
           </div>
         </Message>
       </div>
       <div class="flex flex-row items-center gap-2">
         <Button
           variant="secondary"
-          :disabled="!!props.error || download.isDownloading.value"
+          :disabled="
+            !!props.error ||
+            download.isDownloading.value ||
+            download.downloadProgress.value === 100
+          "
           :title="props.url"
           @click="handleDownload"
         >
@@ -48,6 +91,12 @@
             <i class="pi pi-spin pi-spinner"></i>
             {{ $t('g.downloadingProgress')
             }}{{ download.downloadProgress.value }}%)
+          </span>
+          <span
+            v-else-if="download.downloadStatus.value.status === 'completed'"
+          >
+            <i class="pi pi-check mr-1"></i>
+            {{ $t('g.downloaded') }}
           </span>
           <span v-else>{{ $t('g.download') + ' (' + fileSize + ')' }}</span>
         </Button>
@@ -92,17 +141,22 @@ const handleDownload = async () => {
   // Clear any previous errors
   download.error.value = null
 
-  // Use server-side download if modelType is provided (for missing models dialog)
+  // Only use server-side download if modelType is provided (for missing models dialog)
   if (props.modelType) {
     await download.triggerServerDownload(props.modelType, props.label)
   } else {
-    // Fallback to browser download for other cases
-    download.triggerBrowserDownload()
+    // For other cases without modelType, don't download at all
+    console.warn('Download attempted without modelType - not supported')
+    download.error.value = new Error('Download not available for this item')
   }
 }
 
-const handleBrowserDownload = () => {
-  download.triggerManualBrowserDownload()
+const handleRetryDownload = async () => {
+  // Clear error and retry server download
+  download.error.value = null
+  if (props.modelType) {
+    await download.triggerServerDownload(props.modelType, props.label)
+  }
 }
 
 const copyURL = async () => {
