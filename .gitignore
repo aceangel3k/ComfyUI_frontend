@@ -61,7 +61,7 @@ browser_tests/local/
 
 .env
 
-dist.zip
+#dist.zip
 
 /temp/
 
