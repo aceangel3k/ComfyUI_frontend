@@ -14,9 +14,6 @@ export function useDownload(url: string, fileName?: string) {
     fileSize.value = size
   }
 
-  const setDownloadProgress = (progress: number) => {
-    downloadProgress.value = progress
-  }
 
   const fetchFileSize = async () => {
     try {
