@@ -14,7 +14,6 @@ export function useDownload(url: string, fileName?: string) {
     fileSize.value = size
   }
 
-
   const fetchFileSize = async () => {
     try {
       const response = await fetch(url, { method: 'HEAD' })
@@ -54,7 +53,10 @@ export function useDownload(url: string, fileName?: string) {
   /**
    * Trigger server-side model download to ComfyUI models folder
    */
-  const triggerServerDownload = async (modelType: string, modelFileName?: string) => {
+  const triggerServerDownload = async (
+    modelType: string,
+    modelFileName?: string
+  ) => {
     if (isDownloading.value) return
 
     isDownloading.value = true
@@ -65,11 +67,12 @@ export function useDownload(url: string, fileName?: string) {
       const response = await fetch('/api/download_model', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           url: url,
-          filename: modelFileName || fileName || url.split('/').pop() || 'download',
+          filename:
+            modelFileName || fileName || url.split('/').pop() || 'download',
           model_type: modelType
         })
       })
@@ -89,11 +92,17 @@ export function useDownload(url: string, fileName?: string) {
     } catch (e) {
       console.error('Server download failed:', e)
       error.value = e instanceof Error ? e : new Error(String(e))
-      // Fallback to browser download if server download fails
-      triggerBrowserDownload()
+      // Don't automatically fallback to browser download - let user see the error
     } finally {
       isDownloading.value = false
     }
+  }
+
+  /**
+   * Manual fallback to browser download (only called explicitly by user)
+   */
+  const triggerManualBrowserDownload = () => {
+    triggerBrowserDownload()
   }
 
   onMounted(() => {
@@ -111,8 +120,10 @@ export function useDownload(url: string, fileName?: string) {
   return {
     triggerBrowserDownload,
     triggerServerDownload,
+    triggerManualBrowserDownload,
     fileSize,
     isDownloading,
-    downloadProgress
+    downloadProgress,
+    error
   }
 }

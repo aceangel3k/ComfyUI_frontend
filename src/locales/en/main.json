@@ -8,6 +8,8 @@
     "download": "Download",
     "downloadImage": "Download image",
     "downloadVideo": "Download video",
+    "downloadToBrowser": "Download to browser instead",
+    "downloadingProgress": "Downloading... (",
     "editOrMaskImage": "Edit or mask image",
     "editImage": "Edit image",
     "deleteImage": "Delete image",
