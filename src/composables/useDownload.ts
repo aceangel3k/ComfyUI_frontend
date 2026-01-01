@@ -64,7 +64,57 @@ export function useDownload(url: string, fileName?: string) {
       progress: 0
     }
 
+    let pollInterval: NodeJS.Timeout | null = null
+
     try {
+      console.warn(`Starting server download for model type: ${modelType}`)
+
+      // Start progress polling
+      pollInterval = setInterval(async () => {
+        try {
+          const progressResponse = await fetch('/download/download_progress', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ url: url })
+          })
+
+          if (progressResponse.ok) {
+            const progressData = await progressResponse.json()
+
+            if (progressData.progress !== undefined) {
+              downloadProgress.value = progressData.progress
+              downloadStatus.value = {
+                status: progressData.status || 'downloading',
+                message: `Downloading to ${modelType} folder... ${progressData.progress}%`,
+                progress: progressData.progress
+              }
+
+              if (progressData.status === 'completed') {
+                downloadProgress.value = 100
+                downloadStatus.value = {
+                  status: 'completed',
+                  message: `Model downloaded successfully to ${modelType} folder`,
+                  progress: 100,
+                  filePath: progressData.file_path
+                }
+                if (pollInterval) {
+                  clearInterval(pollInterval)
+                  pollInterval = null
+                }
+              } else if (progressData.status === 'error') {
+                throw new Error(progressData.error || 'Download error')
+              }
+            }
+          }
+        } catch (pollError) {
+          console.error('Progress polling error:', pollError)
+          // Don't throw here, let the main download request handle errors
+        }
+      }, 500) // Poll every 500ms
+
+      // Start the actual download
       const response = await fetch('/download/download_model', {
         method: 'POST',
         headers: {
@@ -81,10 +131,12 @@ export function useDownload(url: string, fileName?: string) {
       const result = await response.json()
 
       if (!response.ok) {
+        console.error('Server download failed:', result)
         throw new Error(result.error || `HTTP ${response.status}`)
       }
 
       if (result.success) {
+        console.warn('Server download completed successfully')
         downloadProgress.value = 100
         downloadStatus.value = {
           status: 'completed',
@@ -92,10 +144,8 @@ export function useDownload(url: string, fileName?: string) {
           progress: 100,
           filePath: result.file_path
         }
-        console.warn(
-          `✅ Model downloaded to: ${result.file_path || 'unknown location'}`
-        )
       } else {
+        console.error('Server download returned failure:', result)
         throw new Error(result.error || 'Download failed')
       }
     } catch (e) {
@@ -108,6 +158,10 @@ export function useDownload(url: string, fileName?: string) {
         progress: downloadProgress.value
       }
     } finally {
+      if (pollInterval) {
+        clearInterval(pollInterval)
+        pollInterval = null
+      }
       isDownloading.value = false
     }
   }
