@@ -4,7 +4,7 @@ import { onMounted, ref } from 'vue'
 import { useCivitaiModel } from '@/composables/useCivitaiModel'
 import { isCivitaiModelUrl } from '@/utils/formatUtil'
 
-export interface DownloadStatus {
+interface DownloadStatus {
   status: 'idle' | 'downloading' | 'completed' | 'error'
   message: string
   progress: number
