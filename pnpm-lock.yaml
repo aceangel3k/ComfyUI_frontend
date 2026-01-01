@@ -264,9 +264,6 @@ catalogs:
     typescript-eslint:
       specifier: ^8.49.0
       version: 8.49.0
-    unplugin-icons:
-      specifier: ^22.5.0
-      version: 22.5.0
     unplugin-typegpu:
       specifier: 0.8.0
       version: 0.8.0
@@ -324,6 +321,8 @@ catalogs:
 
 overrides:
   '@types/eslint': '-'
+  '@iconify/utils': ^3.0.2
+  unplugin-icons: ^22.5.0
 
 importers:
 
@@ -691,7 +690,7 @@ importers:
         specifier: 'catalog:'
         version: 8.49.0(eslint@9.39.1(jiti@2.6.1))(typescript@5.9.3)
       unplugin-icons:
-        specifier: 'catalog:'
+        specifier: ^22.5.0
         version: 22.5.0(@vue/compiler-sfc@3.5.25)
       unplugin-typegpu:
         specifier: 'catalog:'
@@ -779,7 +778,7 @@ importers:
         specifier: 'catalog:'
         version: 16.6.1
       unplugin-icons:
-        specifier: 'catalog:'
+        specifier: ^22.5.0
         version: 22.5.0(@vue/compiler-sfc@3.5.25)
       unplugin-vue-components:
         specifier: 'catalog:'
