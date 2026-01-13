@@ -57,6 +57,9 @@
   "Comfy_ConfirmClear": {
     "name": "清除工作流时需要确认"
   },
+  "Comfy_DOMClippingEnabled": {
+    "name": "启用DOM元素裁剪（启用可能会降低性能）"
+  },
   "Comfy_DevMode": {
     "name": "启用开发模式选项（API保存等）"
   },
@@ -66,9 +69,6 @@
   },
   "Comfy_DisableSliders": {
     "name": "禁用节点组件滑块"
-  },
-  "Comfy_DOMClippingEnabled": {
-    "name": "启用DOM元素裁剪（启用可能会降低性能）"
   },
   "Comfy_EditAttention_Delta": {
     "name": "Ctrl+上/下 精度"
@@ -118,11 +118,11 @@
   "Comfy_Graph_ZoomSpeed": {
     "name": "画布缩放速度"
   },
-  "Comfy_Group_DoubleClickTitleToEdit": {
-    "name": "双击组标题以编辑"
-  },
   "Comfy_GroupSelectedNodes_Padding": {
     "name": "选定节点的组内边距"
+  },
+  "Comfy_Group_DoubleClickTitleToEdit": {
+    "name": "双击组标题以编辑"
   },
   "Comfy_LinkRelease_Action": {
     "name": "释放连线时的操作",
@@ -217,38 +217,6 @@
     },
     "tooltip": "选择“文件名”以在模型列表中显示原始文件名的简化视图（不带目录和“.safetensors”后缀名）。选择“标题”以显示可配置的模型元数据标题。"
   },
-  "Comfy_Node_AllowImageSizeDraw": {
-    "name": "在图像预览下方显示宽度×高度"
-  },
-  "Comfy_Node_AutoSnapLinkToSlot": {
-    "name": "连线自动吸附到节点接口",
-    "tooltip": "在节点上拖动连线时，连线会自动吸附到节点的可用输入接口。"
-  },
-  "Comfy_Node_BypassAllLinksOnDelete": {
-    "name": "删除节点时保留连线",
-    "tooltip": "删除节点时，尝试重新连接其所有输入和输出连线（类似于忽略节点）。"
-  },
-  "Comfy_Node_DoubleClickTitleToEdit": {
-    "name": "双击节点标题以编辑"
-  },
-  "Comfy_Node_MiddleClickRerouteNode": {
-    "name": "中键单击创建新的转接点"
-  },
-  "Comfy_Node_Opacity": {
-    "name": "节点不透明度"
-  },
-  "Comfy_Node_ShowDeprecated": {
-    "name": "在搜索中显示已弃用的节点",
-    "tooltip": "弃用节点在UI中默认隐藏，但在工作流中仍然有效。"
-  },
-  "Comfy_Node_ShowExperimental": {
-    "name": "在搜索中显示实验性节点",
-    "tooltip": "实验节点在UI中标记为实验性，可能在未来版本中发生重大变化或被移除。在生产工作流中谨慎使用。"
-  },
-  "Comfy_Node_SnapHighlightsNode": {
-    "name": "吸附高亮节点",
-    "tooltip": "在拖动连线经过具有可用输入接口的节点时，高亮显示该节点。"
-  },
   "Comfy_NodeBadge_NodeIdBadgeMode": {
     "name": "节点ID标签",
     "options": {
@@ -301,6 +269,38 @@
     "name": "节点建议数量",
     "tooltip": "仅适用于 litegraph"
   },
+  "Comfy_Node_AllowImageSizeDraw": {
+    "name": "在图像预览下方显示宽度×高度"
+  },
+  "Comfy_Node_AutoSnapLinkToSlot": {
+    "name": "连线自动吸附到节点接口",
+    "tooltip": "在节点上拖动连线时，连线会自动吸附到节点的可用输入接口。"
+  },
+  "Comfy_Node_BypassAllLinksOnDelete": {
+    "name": "删除节点时保留连线",
+    "tooltip": "删除节点时，尝试重新连接其所有输入和输出连线（类似于忽略节点）。"
+  },
+  "Comfy_Node_DoubleClickTitleToEdit": {
+    "name": "双击节点标题以编辑"
+  },
+  "Comfy_Node_MiddleClickRerouteNode": {
+    "name": "中键单击创建新的转接点"
+  },
+  "Comfy_Node_Opacity": {
+    "name": "节点不透明度"
+  },
+  "Comfy_Node_ShowDeprecated": {
+    "name": "在搜索中显示已弃用的节点",
+    "tooltip": "弃用节点在UI中默认隐藏，但在工作流中仍然有效。"
+  },
+  "Comfy_Node_ShowExperimental": {
+    "name": "在搜索中显示实验性节点",
+    "tooltip": "实验节点在UI中标记为实验性，可能在未来版本中发生重大变化或被移除。在生产工作流中谨慎使用。"
+  },
+  "Comfy_Node_SnapHighlightsNode": {
+    "name": "吸附高亮节点",
+    "tooltip": "在拖动连线经过具有可用输入接口的节点时，高亮显示该节点。"
+  },
   "Comfy_Notification_ShowVersionUpdates": {
     "name": "显示版本更新",
     "tooltip": "显示新模型和主要新功能的更新。"
@@ -324,13 +324,13 @@
   "Comfy_PromptFilename": {
     "name": "保存工作流时提示文件名"
   },
-  "Comfy_Queue_MaxHistoryItems": {
-    "name": "队列历史大小",
-    "tooltip": "队列历史中显示的最大任务数量。"
-  },
   "Comfy_QueueButton_BatchCountLimit": {
     "name": "批处理计数限制",
     "tooltip": "单次添加到队列的最大任务数量"
+  },
+  "Comfy_Queue_MaxHistoryItems": {
+    "name": "队列历史大小",
+    "tooltip": "队列历史中显示的最大任务数量。"
   },
   "Comfy_Sidebar_Location": {
     "name": "侧边栏位置",
@@ -368,6 +368,14 @@
   },
   "Comfy_TreeExplorer_ItemPadding": {
     "name": "树形浏览器项目内边距"
+  },
+  "Comfy_UI_TabBarLayout": {
+    "name": "标签栏布局",
+    "options": {
+      "Default": "默认",
+      "Integrated": "集成"
+    },
+    "tooltip": "控制标签栏的布局。“集成”会将帮助和用户控件移动到标签栏区域。"
   },
   "Comfy_UseNewMenu": {
     "name": "使用新菜单",
