@@ -4,9 +4,10 @@ import { computed, readonly } from 'vue'
 import { t } from '@/i18n'
 import { useToastStore } from '@/platform/updates/common/toastStore'
 import { api } from '@/scripts/api'
-import { useDialogService } from '@/services/dialogService'
+import { useSettingsDialog } from '@/platform/settings/composables/useSettingsDialog'
 import { useCommandStore } from '@/stores/commandStore'
 import { useSystemStatsStore } from '@/stores/systemStatsStore'
+import { useManagerDialog } from '@/workbench/extensions/manager/composables/useManagerDialog'
 import { ManagerTab } from '@/workbench/extensions/manager/types/comfyManagerTypes'
 
 export enum ManagerUIState {
@@ -19,6 +20,7 @@ export function useManagerState() {
   const systemStatsStore = useSystemStatsStore()
   const { systemStats, isInitialized: systemInitialized } =
     storeToRefs(systemStatsStore)
+  const managerDialog = useManagerDialog()
 
   /**
    * The current manager UI state.
@@ -146,12 +148,12 @@ export function useManagerState() {
     isLegacyOnly?: boolean
   }): Promise<void> => {
     const state = managerUIState.value
-    const dialogService = useDialogService()
+    const settingsDialog = useSettingsDialog()
     const commandStore = useCommandStore()
 
     switch (state) {
       case ManagerUIState.DISABLED:
-        dialogService.showSettingsDialog('extension')
+        settingsDialog.show('extension')
         break
 
       case ManagerUIState.LEGACY_UI: {
@@ -171,7 +173,7 @@ export function useManagerState() {
           }
           // Fallback to extensions panel if not showing toast
           if (options?.showToastOnLegacyError === false) {
-            dialogService.showSettingsDialog('extension')
+            settingsDialog.show('extension')
           }
         }
         break
@@ -186,11 +188,9 @@ export function useManagerState() {
             detail: t('manager.legacyMenuNotAvailable'),
             life: 3000
           })
-          dialogService.showManagerDialog({ initialTab: ManagerTab.All })
+          await managerDialog.show(ManagerTab.All)
         } else {
-          dialogService.showManagerDialog(
-            options?.initialTab ? { initialTab: options.initialTab } : undefined
-          )
+          await managerDialog.show(options?.initialTab)
         }
         break
     }

@@ -11,6 +11,7 @@
         )
       }
     }"
+    @hide="emit('hide')"
   >
     <template #item="{ item, props }">
       <Button
@@ -31,6 +32,7 @@
 import { onClickOutside } from '@vueuse/core'
 import ContextMenu from 'primevue/contextmenu'
 import type { MenuItem } from 'primevue/menuitem'
+import type { ComponentPublicInstance } from 'vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -62,18 +64,27 @@ const {
 
 const emit = defineEmits<{
   zoom: []
+  hide: []
   'asset-deleted': []
   'bulk-download': [assets: AssetItem[]]
   'bulk-delete': [assets: AssetItem[]]
+  'bulk-add-to-workflow': [assets: AssetItem[]]
+  'bulk-open-workflow': [assets: AssetItem[]]
+  'bulk-export-workflow': [assets: AssetItem[]]
 }>()
 
-const contextMenu = ref<InstanceType<typeof ContextMenu>>()
+type ContextMenuInstance = ComponentPublicInstance & {
+  show: (event: MouseEvent) => void
+  hide: () => void
+}
+
+const contextMenu = ref<ContextMenuInstance | null>(null)
 const actions = useMediaAssetActions()
 const { t } = useI18n()
 
 // Close context menu when clicking outside
 onClickOutside(
-  computed(() => (contextMenu.value as any)?.$el),
+  computed(() => contextMenu.value?.$el),
   () => {
     hide()
   }
@@ -140,6 +151,27 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       disabled: true
     })
 
+    // Bulk Add to Workflow
+    items.push({
+      label: t('mediaAsset.selection.insertAllAssetsAsNodes'),
+      icon: 'icon-[comfy--node]',
+      command: () => emit('bulk-add-to-workflow', selectedAssets)
+    })
+
+    // Bulk Open Workflow
+    items.push({
+      label: t('mediaAsset.selection.openWorkflowAll'),
+      icon: 'icon-[comfy--workflow]',
+      command: () => emit('bulk-open-workflow', selectedAssets)
+    })
+
+    // Bulk Export Workflow
+    items.push({
+      label: t('mediaAsset.selection.exportWorkflowAll'),
+      icon: 'icon-[lucide--file-output]',
+      command: () => emit('bulk-export-workflow', selectedAssets)
+    })
+
     // Bulk Download
     items.push({
       label: t('mediaAsset.selection.downloadSelectedAll'),
@@ -173,7 +205,7 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   // Add to workflow (conditional)
   if (showAddToWorkflow.value) {
     items.push({
-      label: t('mediaAsset.actions.addToWorkflow'),
+      label: t('mediaAsset.actions.insertAsNodeInWorkflow'),
       icon: 'icon-[comfy--node]',
       command: () => actions.addWorkflow(asset)
     })
@@ -221,8 +253,8 @@ const contextMenuItems = computed<MenuItem[]>(() => {
       icon: 'icon-[lucide--trash-2]',
       command: async () => {
         if (asset) {
-          const success = await actions.confirmDelete(asset)
-          if (success) {
+          const confirmed = await actions.deleteAssets(asset)
+          if (confirmed) {
             emit('asset-deleted')
           }
         }

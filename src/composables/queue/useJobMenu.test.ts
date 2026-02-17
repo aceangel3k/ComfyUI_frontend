@@ -5,15 +5,24 @@ import type { Ref } from 'vue'
 import type { JobListItem } from '@/composables/queue/useJobList'
 import type { MenuEntry } from '@/composables/queue/useJobMenu'
 
+vi.mock('@/platform/distribution/types', () => ({
+  isCloud: false
+}))
+
 const downloadFileMock = vi.fn()
 vi.mock('@/base/common/downloadUtil', () => ({
-  downloadFile: (...args: any[]) => downloadFileMock(...args)
+  downloadFile: (url: string, filename?: string) => {
+    if (filename === undefined) {
+      return downloadFileMock(url)
+    }
+    return downloadFileMock(url, filename)
+  }
 }))
 
 const copyToClipboardMock = vi.fn()
 vi.mock('@/composables/useCopyToClipboard', () => ({
   useCopyToClipboard: () => ({
-    copyToClipboard: (...args: any[]) => copyToClipboardMock(...args)
+    copyToClipboard: (text: string) => copyToClipboardMock(text)
   })
 }))
 
@@ -26,12 +35,12 @@ vi.mock('@/i18n', () => ({
 
 const mapTaskOutputToAssetItemMock = vi.fn()
 vi.mock('@/platform/assets/composables/media/assetMappers', () => ({
-  mapTaskOutputToAssetItem: (...args: any[]) =>
-    mapTaskOutputToAssetItemMock(...args)
+  mapTaskOutputToAssetItem: (taskItem: TaskItemImpl, output: ResultItemImpl) =>
+    mapTaskOutputToAssetItemMock(taskItem, output)
 }))
 
 const mediaAssetActionsMock = {
-  confirmDelete: vi.fn()
+  deleteAssets: vi.fn()
 }
 vi.mock('@/platform/assets/composables/useMediaAssetActions', () => ({
   useMediaAssetActions: () => mediaAssetActionsMock
@@ -55,24 +64,28 @@ const workflowStoreMock = {
   createTemporary: vi.fn()
 }
 vi.mock('@/platform/workflow/management/stores/workflowStore', () => ({
-  useWorkflowStore: () => workflowStoreMock
+  useWorkflowStore: () => workflowStoreMock,
+  ComfyWorkflow: class {}
 }))
 
 const interruptMock = vi.fn()
 const deleteItemMock = vi.fn()
 vi.mock('@/scripts/api', () => ({
   api: {
-    interrupt: (...args: any[]) => interruptMock(...args),
-    deleteItem: (...args: any[]) => deleteItemMock(...args)
+    interrupt: (runningPromptId: string | null) =>
+      interruptMock(runningPromptId),
+    deleteItem: (type: string, id: string) => deleteItemMock(type, id)
   }
 }))
 
 const downloadBlobMock = vi.fn()
 vi.mock('@/scripts/utils', () => ({
-  downloadBlob: (...args: any[]) => downloadBlobMock(...args)
+  downloadBlob: (filename: string, blob: Blob) =>
+    downloadBlobMock(filename, blob)
 }))
 
 const dialogServiceMock = {
+  showErrorDialog: vi.fn(),
   showExecutionErrorDialog: vi.fn(),
   prompt: vi.fn()
 }
@@ -88,11 +101,14 @@ vi.mock('@/services/litegraphService', () => ({
   useLitegraphService: () => litegraphServiceMock
 }))
 
-const nodeDefStoreMock = {
-  nodeDefsByName: {} as Record<string, any>
+const nodeDefStoreMock: {
+  nodeDefsByName: Record<string, Partial<ComfyNodeDefImpl>>
+} = {
+  nodeDefsByName: {}
 }
 vi.mock('@/stores/nodeDefStore', () => ({
-  useNodeDefStore: () => nodeDefStoreMock
+  useNodeDefStore: () => nodeDefStoreMock,
+  ComfyNodeDefImpl: class {}
 }))
 
 const queueStoreMock = {
@@ -103,9 +119,22 @@ vi.mock('@/stores/queueStore', () => ({
   useQueueStore: () => queueStoreMock
 }))
 
+const executionStoreMock = {
+  clearInitializationByPromptId: vi.fn()
+}
+vi.mock('@/stores/executionStore', () => ({
+  useExecutionStore: () => executionStoreMock
+}))
+
+const getJobWorkflowMock = vi.fn()
+vi.mock('@/services/jobOutputCache', () => ({
+  getJobWorkflow: (jobId: string) => getJobWorkflowMock(jobId)
+}))
+
 const createAnnotatedPathMock = vi.fn()
 vi.mock('@/utils/createAnnotatedPath', () => ({
-  createAnnotatedPath: (...args: any[]) => createAnnotatedPathMock(...args)
+  createAnnotatedPath: (filename: string, subfolder: string, type: string) =>
+    createAnnotatedPathMock(filename, subfolder, type)
 }))
 
 const appendJsonExtMock = vi.fn((value: string) =>
@@ -117,13 +146,23 @@ vi.mock('@/utils/formatUtil', () => ({
 }))
 
 import { useJobMenu } from '@/composables/queue/useJobMenu'
+import type { ComfyNodeDefImpl } from '@/stores/nodeDefStore'
+import type { ResultItemImpl, TaskItemImpl } from '@/stores/queueStore'
 
-const createJobItem = (overrides: Partial<JobListItem> = {}): JobListItem => ({
+type MockTaskRef = Record<string, unknown>
+
+type TestJobListItem = Omit<JobListItem, 'taskRef'> & {
+  taskRef?: MockTaskRef
+}
+
+const createJobItem = (
+  overrides: Partial<TestJobListItem> = {}
+): JobListItem => ({
   id: overrides.id ?? 'job-1',
   title: overrides.title ?? 'Test job',
   meta: overrides.meta ?? 'meta',
   state: overrides.state ?? 'completed',
-  taskRef: overrides.taskRef,
+  taskRef: overrides.taskRef as TaskItemImpl | undefined,
   iconName: overrides.iconName,
   iconImageUrl: overrides.iconImageUrl,
   showClear: overrides.showClear,
@@ -159,17 +198,19 @@ describe('useJobMenu', () => {
     }))
     queueStoreMock.update.mockResolvedValue(undefined)
     queueStoreMock.delete.mockResolvedValue(undefined)
-    mediaAssetActionsMock.confirmDelete.mockResolvedValue(false)
+    mediaAssetActionsMock.deleteAssets.mockResolvedValue(false)
     mapTaskOutputToAssetItemMock.mockImplementation((task, output) => ({
       task,
       output
     }))
     createAnnotatedPathMock.mockReturnValue('annotated-path')
     nodeDefStoreMock.nodeDefsByName = {
-      LoadImage: { id: 'LoadImage' },
-      LoadVideo: { id: 'LoadVideo' },
-      LoadAudio: { id: 'LoadAudio' }
+      LoadImage: { name: 'LoadImage' },
+      LoadVideo: { name: 'LoadVideo' },
+      LoadAudio: { name: 'LoadAudio' }
     }
+    // Default: no workflow available via lazy loading
+    getJobWorkflowMock.mockResolvedValue(undefined)
   })
 
   const setCurrentItem = (item: JobListItem | null) => {
@@ -179,10 +220,13 @@ describe('useJobMenu', () => {
   it('opens workflow when workflow data exists', async () => {
     const { openJobWorkflow } = mountJobMenu()
     const workflow = { nodes: [] }
-    setCurrentItem(createJobItem({ id: '55', taskRef: { workflow } }))
+    // Mock lazy loading via fetchJobDetail + extractWorkflow
+    getJobWorkflowMock.mockResolvedValue(workflow)
+    setCurrentItem(createJobItem({ id: '55' }))
 
     await openJobWorkflow()
 
+    expect(getJobWorkflowMock).toHaveBeenCalledWith('55')
     expect(workflowStoreMock.createTemporary).toHaveBeenCalledWith(
       'Job 55.json',
       workflow
@@ -225,7 +269,7 @@ describe('useJobMenu', () => {
     ['initialization', interruptMock, deleteItemMock]
   ])('cancels %s job via interrupt', async (state) => {
     const { cancelJob } = mountJobMenu()
-    setCurrentItem(createJobItem({ state: state as any }))
+    setCurrentItem(createJobItem({ state: state as JobListItem['state'] }))
 
     await cancelJob()
 
@@ -257,11 +301,12 @@ describe('useJobMenu', () => {
 
   it('copies error message from failed job entry', async () => {
     const { jobMenuEntries } = mountJobMenu()
-    const error = { exception_message: 'boom' }
     setCurrentItem(
       createJobItem({
         state: 'failed',
-        taskRef: { status: { messages: [['execution_error', error]] } } as any
+        taskRef: {
+          errorMessage: 'Something went wrong'
+        } as Partial<TaskItemImpl>
       })
     )
 
@@ -269,31 +314,77 @@ describe('useJobMenu', () => {
     const entry = findActionEntry(jobMenuEntries.value, 'copy-error')
     await entry?.onClick?.()
 
-    expect(copyToClipboardMock).toHaveBeenCalledWith('boom')
+    expect(copyToClipboardMock).toHaveBeenCalledWith('Something went wrong')
   })
 
-  it('reports error via dialog when entry triggered', async () => {
+  it('reports error via rich dialog when execution_error available', async () => {
+    const executionError = {
+      prompt_id: 'job-1',
+      timestamp: 12345,
+      node_id: '5',
+      node_type: 'KSampler',
+      executed: ['1', '2'],
+      exception_message: 'CUDA out of memory',
+      exception_type: 'RuntimeError',
+      traceback: ['line 1', 'line 2'],
+      current_inputs: {},
+      current_outputs: {}
+    }
     const { jobMenuEntries } = mountJobMenu()
-    const error = { exception_message: 'bad', extra: 1 }
     setCurrentItem(
       createJobItem({
         state: 'failed',
-        taskRef: { status: { messages: [['execution_error', error]] } } as any
+        taskRef: {
+          errorMessage: 'CUDA out of memory',
+          executionError,
+          createTime: 12345
+        } as Partial<TaskItemImpl>
       })
     )
 
     await nextTick()
     const entry = findActionEntry(jobMenuEntries.value, 'report-error')
-    void entry?.onClick?.()
+    await entry?.onClick?.()
 
+    expect(dialogServiceMock.showExecutionErrorDialog).toHaveBeenCalledTimes(1)
     expect(dialogServiceMock.showExecutionErrorDialog).toHaveBeenCalledWith(
-      error
+      executionError
     )
+    expect(dialogServiceMock.showErrorDialog).not.toHaveBeenCalled()
+  })
+
+  it('falls back to simple error dialog when no execution_error', async () => {
+    const { jobMenuEntries } = mountJobMenu()
+    setCurrentItem(
+      createJobItem({
+        state: 'failed',
+        taskRef: {
+          errorMessage: 'Job failed with error'
+        } as Partial<TaskItemImpl>
+      })
+    )
+
+    await nextTick()
+    const entry = findActionEntry(jobMenuEntries.value, 'report-error')
+    await entry?.onClick?.()
+
+    expect(dialogServiceMock.showExecutionErrorDialog).not.toHaveBeenCalled()
+    expect(dialogServiceMock.showErrorDialog).toHaveBeenCalledTimes(1)
+    const [errorArg, optionsArg] =
+      dialogServiceMock.showErrorDialog.mock.calls[0]
+    expect(errorArg).toBeInstanceOf(Error)
+    expect(errorArg.message).toBe('Job failed with error')
+    expect(optionsArg).toEqual({ reportType: 'queueJobError' })
   })
 
   it('ignores error actions when message missing', async () => {
     const { jobMenuEntries } = mountJobMenu()
-    setCurrentItem(createJobItem({ state: 'failed', taskRef: { status: {} } }))
+    setCurrentItem(
+      createJobItem({
+        state: 'failed',
+        taskRef: { errorMessage: undefined } as Partial<TaskItemImpl>
+      })
+    )
 
     await nextTick()
     const copyEntry = findActionEntry(jobMenuEntries.value, 'copy-error')
@@ -302,6 +393,7 @@ describe('useJobMenu', () => {
     await reportEntry?.onClick?.()
 
     expect(copyToClipboardMock).not.toHaveBeenCalled()
+    expect(dialogServiceMock.showErrorDialog).not.toHaveBeenCalled()
     expect(dialogServiceMock.showExecutionErrorDialog).not.toHaveBeenCalled()
   })
 
@@ -438,7 +530,12 @@ describe('useJobMenu', () => {
 
   it('ignores add-to-current entry when preview missing entirely', async () => {
     const { jobMenuEntries } = mountJobMenu()
-    setCurrentItem(createJobItem({ state: 'completed', taskRef: {} as any }))
+    setCurrentItem(
+      createJobItem({
+        state: 'completed',
+        taskRef: {} as Partial<TaskItemImpl>
+      })
+    )
 
     await nextTick()
     const entry = findActionEntry(jobMenuEntries.value, 'add-to-current')
@@ -467,7 +564,12 @@ describe('useJobMenu', () => {
 
   it('ignores download request when preview missing', async () => {
     const { jobMenuEntries } = mountJobMenu()
-    setCurrentItem(createJobItem({ state: 'completed', taskRef: {} as any }))
+    setCurrentItem(
+      createJobItem({
+        state: 'completed',
+        taskRef: {} as Partial<TaskItemImpl>
+      })
+    )
 
     await nextTick()
     const entry = findActionEntry(jobMenuEntries.value, 'download')
@@ -477,12 +579,13 @@ describe('useJobMenu', () => {
   })
 
   it('exports workflow with default filename when prompting disabled', async () => {
+    const workflow = { foo: 'bar' }
+    getJobWorkflowMock.mockResolvedValue(workflow)
     const { jobMenuEntries } = mountJobMenu()
     setCurrentItem(
       createJobItem({
         id: '7',
-        state: 'completed',
-        taskRef: { workflow: { foo: 'bar' } }
+        state: 'completed'
       })
     )
 
@@ -502,11 +605,11 @@ describe('useJobMenu', () => {
   it('prompts for filename when setting enabled', async () => {
     settingStoreMock.get.mockReturnValue(true)
     dialogServiceMock.prompt.mockResolvedValue('custom-name')
+    getJobWorkflowMock.mockResolvedValue({})
     const { jobMenuEntries } = mountJobMenu()
     setCurrentItem(
       createJobItem({
-        state: 'completed',
-        taskRef: { workflow: {} }
+        state: 'completed'
       })
     )
 
@@ -526,12 +629,12 @@ describe('useJobMenu', () => {
   it('keeps existing json extension when exporting workflow', async () => {
     settingStoreMock.get.mockReturnValue(true)
     dialogServiceMock.prompt.mockResolvedValue('existing.json')
+    getJobWorkflowMock.mockResolvedValue({ foo: 'bar' })
     const { jobMenuEntries } = mountJobMenu()
     setCurrentItem(
       createJobItem({
         id: '42',
-        state: 'completed',
-        taskRef: { workflow: { foo: 'bar' } }
+        state: 'completed'
       })
     )
 
@@ -547,11 +650,11 @@ describe('useJobMenu', () => {
   it('abandons export when prompt cancelled', async () => {
     settingStoreMock.get.mockReturnValue(true)
     dialogServiceMock.prompt.mockResolvedValue('')
+    getJobWorkflowMock.mockResolvedValue({})
     const { jobMenuEntries } = mountJobMenu()
     setCurrentItem(
       createJobItem({
-        state: 'completed',
-        taskRef: { workflow: {} }
+        state: 'completed'
       })
     )
 
@@ -563,7 +666,7 @@ describe('useJobMenu', () => {
   })
 
   it('deletes preview asset when confirmed', async () => {
-    mediaAssetActionsMock.confirmDelete.mockResolvedValue(true)
+    mediaAssetActionsMock.deleteAssets.mockResolvedValue(true)
     const { jobMenuEntries } = mountJobMenu()
     const preview = { filename: 'foo', subfolder: 'bar', type: 'output' }
     const taskRef = { previewOutput: preview }
@@ -578,7 +681,7 @@ describe('useJobMenu', () => {
   })
 
   it('does not refresh queue when delete cancelled', async () => {
-    mediaAssetActionsMock.confirmDelete.mockResolvedValue(false)
+    mediaAssetActionsMock.deleteAssets.mockResolvedValue(false)
     const { jobMenuEntries } = mountJobMenu()
     setCurrentItem(
       createJobItem({
@@ -671,7 +774,12 @@ describe('useJobMenu', () => {
 
   it('returns failed menu entries with error actions', async () => {
     const { jobMenuEntries } = mountJobMenu()
-    setCurrentItem(createJobItem({ state: 'failed', taskRef: { status: {} } }))
+    setCurrentItem(
+      createJobItem({
+        state: 'failed',
+        taskRef: { errorMessage: 'Some error' } as Partial<TaskItemImpl>
+      })
+    )
 
     await nextTick()
     expect(jobMenuEntries.value.map((entry) => entry.key)).toEqual([

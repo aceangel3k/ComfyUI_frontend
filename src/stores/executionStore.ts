@@ -30,6 +30,7 @@ import type {
 import { api } from '@/scripts/api'
 import { app } from '@/scripts/app'
 import { useNodeOutputStore } from '@/stores/imagePreviewStore'
+import { useJobPreviewStore } from '@/stores/jobPreviewStore'
 import type { NodeLocatorId } from '@/types/nodeIdentification'
 import { createNodeLocatorId } from '@/types/nodeIdentification'
 import { forEachNode, getNodeByExecutionId } from '@/utils/graphTraversalUtil'
@@ -396,10 +397,8 @@ export const useExecutionStore = defineStore('execution', () => {
         error: e.detail.exception_message
       })
     }
-    const pid = e.detail?.prompt_id
-    // Clear initialization for errored prompt if present
-    if (e.detail?.prompt_id) clearInitializationByPromptId(e.detail.prompt_id)
-    resetExecutionState(pid)
+    clearInitializationByPromptId(e.detail.prompt_id)
+    resetExecutionState(e.detail.prompt_id)
   }
 
   /**
@@ -427,6 +426,18 @@ export const useExecutionStore = defineStore('execution', () => {
     initializingPromptIds.value = next
   }
 
+  function clearInitializationByPromptIds(promptIds: string[]) {
+    if (!promptIds.length) return
+    const current = initializingPromptIds.value
+    const toRemove = promptIds.filter((id) => current.has(id))
+    if (!toRemove.length) return
+    const next = new Set(current)
+    for (const id of toRemove) {
+      next.delete(id)
+    }
+    initializingPromptIds.value = next
+  }
+
   function isPromptInitializing(
     promptId: string | number | undefined
   ): boolean {
@@ -444,6 +455,7 @@ export const useExecutionStore = defineStore('execution', () => {
       const map = { ...nodeProgressStatesByPrompt.value }
       delete map[promptId]
       nodeProgressStatesByPrompt.value = map
+      useJobPreviewStore().clearPreview(promptId)
     }
     if (activePromptId.value) {
       delete queuedPrompts.value[activePromptId.value]
@@ -652,6 +664,8 @@ export const useExecutionStore = defineStore('execution', () => {
     runningWorkflowCount,
     initializingPromptIds,
     isPromptInitializing,
+    clearInitializationByPromptId,
+    clearInitializationByPromptIds,
     bindExecutionEvents,
     unbindExecutionEvents,
     storePrompt,

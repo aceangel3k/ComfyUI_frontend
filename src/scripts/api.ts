@@ -10,6 +10,7 @@ import type {
 } from '@/platform/assets/schemas/assetSchema'
 import { isCloud } from '@/platform/distribution/types'
 import { useToastStore } from '@/platform/updates/common/toastStore'
+import type { IFuseOptions } from 'fuse.js'
 import {
   type TemplateInfo,
   type WorkflowTemplates
@@ -21,6 +22,7 @@ import type {
 } from '@/platform/workflow/validation/schemas/workflowSchema'
 import type {
   AssetDownloadWsMessage,
+  CustomNodesI18n,
   EmbeddingsResponse,
   ExecutedWsMessage,
   ExecutingWsMessage,
@@ -31,30 +33,34 @@ import type {
   ExecutionSuccessWsMessage,
   ExtensionsResponse,
   FeatureFlagsWsMessage,
-  HistoryTaskItem,
   LogsRawResponse,
   LogsWsMessage,
   NotificationWsMessage,
-  PendingTaskItem,
+  PreviewMethod,
   ProgressStateWsMessage,
   ProgressTextWsMessage,
   ProgressWsMessage,
   PromptResponse,
-  RunningTaskItem,
   Settings,
   StatusWsMessage,
   StatusWsMessageStatus,
   SystemStats,
   User,
-  UserDataFullInfo,
-  PreviewMethod
+  UserDataFullInfo
 } from '@/schemas/apiSchema'
+import type {
+  JobDetail,
+  JobListItem
+} from '@/platform/remote/comfyui/jobs/jobTypes'
 import type { ComfyNodeDef } from '@/schemas/nodeDefSchema'
 import type { useFirebaseAuthStore } from '@/stores/firebaseAuthStore'
 import type { AuthHeader } from '@/types/authTypes'
 import type { NodeExecutionId } from '@/types/nodeIdentification'
-import { fetchHistory } from '@/platform/remote/comfyui/history'
-import type { IFuseOptions } from 'fuse.js'
+import {
+  fetchHistory,
+  fetchJobDetail,
+  fetchQueue
+} from '@/platform/remote/comfyui/jobs/fetchJobs'
 
 interface QueuePromptRequestBody {
   client_id: string
@@ -125,11 +131,15 @@ interface QueuePromptOptions {
 /** Dictionary of Frontend-generated API calls */
 interface FrontendApiCalls {
   graphChanged: ComfyWorkflowJSON
-  promptQueued: { number: number; batchCount: number }
+  promptQueueing: { requestId: number; batchCount: number; number?: number }
+  promptQueued: { number: number; batchCount: number; requestId?: number }
   graphCleared: never
   reconnecting: never
   reconnected: never
 }
+
+export type PromptQueueingEventPayload = FrontendApiCalls['promptQueueing']
+export type PromptQueuedEventPayload = FrontendApiCalls['promptQueued']
 
 /** Dictionary of calls originating from ComfyUI core */
 interface BackendApiCalls {
@@ -225,7 +235,11 @@ type ComplexApiEvents = keyof NeverNever<ApiEventTypes>
 
 export type GlobalSubgraphData = {
   name: string
-  info: { node_pack: string }
+  info: {
+    node_pack: string
+    category?: string
+    search_aliases?: string[]
+  }
   data: string | Promise<string>
 }
 
@@ -285,7 +299,7 @@ export class PromptExecutionError extends Error {
 }
 
 export class ComfyApi extends EventTarget {
-  #registered = new Set()
+  private _registered = new Set()
   api_host: string
   api_base: string
   /**
@@ -442,7 +456,7 @@ export class ComfyApi extends EventTarget {
   ) {
     // Type assertion: strictFunctionTypes.  So long as we emit events in a type-safe fashion, this is safe.
     super.addEventListener(type, callback as EventListener, options)
-    this.#registered.add(type)
+    this._registered.add(type)
   }
 
   override removeEventListener<TEvent extends keyof ApiEvents>(
@@ -483,7 +497,7 @@ export class ComfyApi extends EventTarget {
   /**
    * Poll status  for colab and other things that don't support websockets.
    */
-  #pollQueue() {
+  private _pollQueue() {
     setInterval(async () => {
       try {
         const resp = await this.fetchApi('/prompt')
@@ -515,10 +529,11 @@ export class ComfyApi extends EventTarget {
     }
 
     // Get auth token and set cloud params if available
+    // Uses workspace token (if enabled) or Firebase token
     if (isCloud) {
       try {
         const authStore = await this.getAuthStore()
-        const authToken = await authStore?.getIdToken()
+        const authToken = await authStore?.getAuthToken()
         if (authToken) {
           params.set('token', authToken)
         }
@@ -558,7 +573,7 @@ export class ComfyApi extends EventTarget {
     this.socket.addEventListener('error', () => {
       if (this.socket) this.socket.close()
       if (!isReconnect && !opened) {
-        this.#pollQueue()
+        this._pollQueue()
       }
     })
 
@@ -670,7 +685,6 @@ export class ComfyApi extends EventTarget {
             case 'logs':
             case 'b_preview':
             case 'notification':
-            case 'asset_download':
               this.dispatchCustomEvent(msg.type, msg.data)
               break
             case 'feature_flags':
@@ -682,7 +696,7 @@ export class ComfyApi extends EventTarget {
               )
               break
             default:
-              if (this.#registered.has(msg.type)) {
+              if (this._registered.has(msg.type)) {
                 // Fallback for custom types - calls super direct.
                 super.dispatchEvent(
                   new CustomEvent(msg.type, { detail: msg.data })
@@ -893,53 +907,13 @@ export class ComfyApi extends EventTarget {
    * @returns The currently running and queued items
    */
   async getQueue(): Promise<{
-    Running: RunningTaskItem[]
-    Pending: PendingTaskItem[]
+    Running: JobListItem[]
+    Pending: JobListItem[]
   }> {
     try {
-      const res = await this.fetchApi('/queue')
-      const data = await res.json()
-      // Normalize queue tuple shape across backends:
-      // - Backend (V1): [idx, prompt_id, inputs, extra_data(object), outputs_to_execute(array)]
-      // - Cloud:        [idx, prompt_id, inputs, outputs_to_execute(array), metadata(object{create_time})]
-      const normalizeQueuePrompt = (prompt: any): any => {
-        if (!Array.isArray(prompt)) return prompt
-        // Ensure 5-tuple
-        const p = prompt.slice(0, 5)
-        const fourth = p[3]
-        const fifth = p[4]
-        // Cloud shape: 4th is array, 5th is metadata object
-        if (
-          Array.isArray(fourth) &&
-          fifth &&
-          typeof fifth === 'object' &&
-          !Array.isArray(fifth)
-        ) {
-          const meta: any = fifth
-          const extraData = { ...meta }
-          return [p[0], p[1], p[2], extraData, fourth]
-        }
-        // V1 shape already: return as-is
-        return p
-      }
-      return {
-        // Running action uses a different endpoint for cancelling
-        Running: data.queue_running.map((prompt: any) => {
-          const np = normalizeQueuePrompt(prompt)
-          return {
-            taskType: 'Running',
-            prompt: np,
-            // prompt[1] is the prompt id
-            remove: { name: 'Cancel', cb: () => api.interrupt(np[1]) }
-          }
-        }),
-        Pending: data.queue_pending.map((prompt: any) => ({
-          taskType: 'Pending',
-          prompt: normalizeQueuePrompt(prompt)
-        }))
-      }
+      return await fetchQueue(this.fetchApi.bind(this))
     } catch (error) {
-      console.error(error)
+      console.error('Failed to fetch queue:', error)
       return { Running: [], Pending: [] }
     }
   }
@@ -951,7 +925,7 @@ export class ComfyApi extends EventTarget {
   async getHistory(
     max_items: number = 200,
     options?: { offset?: number }
-  ): Promise<{ History: HistoryTaskItem[] }> {
+  ): Promise<JobListItem[]> {
     try {
       return await fetchHistory(
         this.fetchApi.bind(this),
@@ -960,8 +934,17 @@ export class ComfyApi extends EventTarget {
       )
     } catch (error) {
       console.error(error)
-      return { History: [] }
+      return []
     }
+  }
+
+  /**
+   * Gets detailed job info including outputs and workflow
+   * @param jobId The job/prompt ID
+   * @returns Full job details or undefined if not found
+   */
+  async getJobDetail(jobId: string): Promise<JobDetail | undefined> {
+    return fetchJobDetail(this.fetchApi.bind(this), jobId)
   }
 
   /**
@@ -978,7 +961,7 @@ export class ComfyApi extends EventTarget {
    * @param {*} type The endpoint to post to
    * @param {*} body Optional POST data
    */
-  async #postItem(type: string, body: any) {
+  private async _postItem(type: string, body?: Record<string, unknown>) {
     try {
       await this.fetchApi('/' + type, {
         method: 'POST',
@@ -998,7 +981,7 @@ export class ComfyApi extends EventTarget {
    * @param {number} id The id of the item to delete
    */
   async deleteItem(type: string, id: string) {
-    await this.#postItem(type, { delete: [id] })
+    await this._postItem(type, { delete: [id] })
   }
 
   /**
@@ -1006,7 +989,7 @@ export class ComfyApi extends EventTarget {
    * @param {string} type The type of list to clear, queue or history
    */
   async clearItems(type: string) {
-    await this.#postItem(type, { clear: true })
+    await this._postItem(type, { clear: true })
   }
 
   /**
@@ -1015,7 +998,7 @@ export class ComfyApi extends EventTarget {
    * @param {string | null} [runningPromptId] Optional Running Prompt ID to interrupt
    */
   async interrupt(runningPromptId: string | null) {
-    await this.#postItem(
+    await this._postItem(
       'interrupt',
       runningPromptId ? { prompt_id: runningPromptId } : undefined
     )
@@ -1068,7 +1051,7 @@ export class ComfyApi extends EventTarget {
   /**
    * Stores a dictionary of settings for the current user
    */
-  async storeSettings(settings: Settings) {
+  async storeSettings(settings: Partial<Settings>) {
     return this.fetchApi(`/settings`, {
       method: 'POST',
       body: JSON.stringify(settings)
@@ -1101,7 +1084,7 @@ export class ComfyApi extends EventTarget {
    */
   async storeUserData(
     file: string,
-    data: any,
+    data: unknown,
     options: RequestInit & {
       overwrite?: boolean
       stringify?: boolean
@@ -1118,7 +1101,7 @@ export class ComfyApi extends EventTarget {
       `/userdata/${encodeURIComponent(file)}?overwrite=${options.overwrite}&full_info=${options.full_info}`,
       {
         method: 'POST',
-        body: options?.stringify ? JSON.stringify(data) : data,
+        body: options?.stringify ? JSON.stringify(data) : (data as BodyInit),
         ...options
       }
     )
@@ -1274,34 +1257,11 @@ export class ComfyApi extends EventTarget {
   }
 
   /**
-   * Gets the Fuse options from the server.
-   *
-   * @returns The Fuse options, or null if not found or invalid
-   */
-  async getFuseOptions(): Promise<IFuseOptions<TemplateInfo> | null> {
-    try {
-      const res = await axios.get(
-        this.fileURL('/templates/fuse_options.json'),
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      )
-      const contentType = res.headers['content-type']
-      return contentType?.includes('application/json') ? res.data : null
-    } catch (error) {
-      console.error('Error loading fuse options:', error)
-      return null
-    }
-  }
-
-  /**
    * Gets the custom nodes i18n data from the server.
    *
    * @returns The custom nodes i18n data
    */
-  async getCustomNodesI18n(): Promise<Record<string, any>> {
+  async getCustomNodesI18n(): Promise<CustomNodesI18n> {
     return (await axios.get(this.apiURL('/i18n'))).data
   }
 
@@ -1330,6 +1290,24 @@ export class ComfyApi extends EventTarget {
    */
   getServerFeatures(): Record<string, unknown> {
     return { ...this.serverFeatureFlags }
+  }
+
+  async getFuseOptions(): Promise<IFuseOptions<TemplateInfo> | null> {
+    try {
+      const res = await axios.get(
+        this.fileURL('/templates/fuse_options.json'),
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+      const contentType = res.headers['content-type']
+      return contentType?.includes('application/json') ? res.data : null
+    } catch (error) {
+      console.error('Error loading fuse options:', error)
+      return null
+    }
   }
 }
 

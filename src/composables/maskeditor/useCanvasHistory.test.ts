@@ -75,7 +75,7 @@ if (typeof globalThis.ImageBitmap === 'undefined') {
       this.height = height
     }
     close() {}
-  } as unknown as typeof globalThis.ImageBitmap
+  } as typeof ImageBitmap
 }
 
 describe('useCanvasHistory', () => {
@@ -167,6 +167,7 @@ describe('useCanvasHistory', () => {
       const rafSpy = vi.spyOn(window, 'requestAnimationFrame')
 
       mockRefs.maskCanvas = {
+        // oxlint-disable-next-line no-misused-spread
         ...mockRefs.maskCanvas,
         width: 0,
         height: 0

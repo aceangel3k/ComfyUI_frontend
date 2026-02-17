@@ -1,87 +1,229 @@
 <script setup lang="ts">
-import { computed, provide } from 'vue'
+import { computed, inject, provide, ref, shallowRef, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { useReactiveWidgetValue } from '@/composables/graph/useGraphNodeManager'
-import type { LGraphNode } from '@/lib/litegraph/src/litegraph'
+import Button from '@/components/ui/button/Button.vue'
+import { isProxyWidget } from '@/core/graph/subgraph/proxyWidget'
+import { parseProxyWidgets } from '@/core/schemas/proxyWidget'
+import type {
+  LGraphGroup,
+  LGraphNode,
+  SubgraphNode
+} from '@/lib/litegraph/src/litegraph'
 import type { IBaseWidget } from '@/lib/litegraph/src/types/widgets'
 import { useCanvasStore } from '@/renderer/core/canvas/canvasStore'
-import WidgetLegacy from '@/renderer/extensions/vueNodes/widgets/components/WidgetLegacy.vue'
-import {
-  getComponent,
-  shouldExpand
-} from '@/renderer/extensions/vueNodes/widgets/registry/widgetRegistry'
-import { cn } from '@/utils/tailwindUtil'
+import { useNodeDefStore } from '@/stores/nodeDefStore'
+import { getWidgetDefaultValue } from '@/utils/widgetUtil'
+import type { WidgetValue } from '@/utils/widgetUtil'
 
 import PropertiesAccordionItem from '../layout/PropertiesAccordionItem.vue'
+import { HideLayoutFieldKey } from '@/types/widgetTypes'
 
-const { label, widgets } = defineProps<{
+import { GetNodeParentGroupKey } from '../shared'
+import WidgetItem from './WidgetItem.vue'
+
+const {
+  label,
+  node,
+  widgets: widgetsProp,
+  showLocateButton = false,
+  isDraggable = false,
+  hiddenFavoriteIndicator = false,
+  showNodeName = false,
+  parents = [],
+  enableEmptyState = false,
+  tooltip
+} = defineProps<{
   label?: string
+  parents?: SubgraphNode[]
+  node?: LGraphNode
   widgets: { widget: IBaseWidget; node: LGraphNode }[]
+  showLocateButton?: boolean
+  isDraggable?: boolean
+  hiddenFavoriteIndicator?: boolean
+  showNodeName?: boolean
+  /**
+   * Whether to show the empty state slot when there are no widgets.
+   */
+  enableEmptyState?: boolean
+  tooltip?: string
 }>()
 
-provide('hideLayoutField', true)
+const collapse = defineModel<boolean>('collapse', { default: false })
+
+const widgetsContainer = ref<HTMLElement>()
+const rootElement = ref<HTMLElement>()
+
+const widgets = shallowRef(widgetsProp)
+watchEffect(() => (widgets.value = widgetsProp))
+
+provide(HideLayoutFieldKey, true)
 
 const canvasStore = useCanvasStore()
+const nodeDefStore = useNodeDefStore()
 const { t } = useI18n()
 
-function getWidgetComponent(widget: IBaseWidget) {
-  const component = getComponent(widget.type, widget.name)
-  return component || WidgetLegacy
+const getNodeParentGroup = inject(GetNodeParentGroupKey, null)
+
+function isWidgetShownOnParents(
+  widgetNode: LGraphNode,
+  widget: IBaseWidget
+): boolean {
+  if (!parents.length) return false
+  const proxyWidgets = parseProxyWidgets(parents[0].properties.proxyWidgets)
+
+  // For proxy widgets (already promoted), check using overlay information
+  if (isProxyWidget(widget)) {
+    return proxyWidgets.some(
+      ([nodeId, widgetName]) =>
+        widget._overlay.nodeId == nodeId &&
+        widget._overlay.widgetName === widgetName
+    )
+  }
+
+  // For regular widgets (not yet promoted), check using node ID and widget name
+  return proxyWidgets.some(
+    ([nodeId, widgetName]) =>
+      widgetNode.id == nodeId && widget.name === widgetName
+  )
 }
 
-function onWidgetValueChange(
-  widget: IBaseWidget,
-  value: string | number | boolean | object
-) {
+const isEmpty = computed(() => widgets.value.length === 0)
+
+const displayLabel = computed(
+  () => label ?? (node ? node.title : t('rightSidePanel.inputs'))
+)
+
+const targetNode = computed<LGraphNode | null>(() => {
+  if (node) return node
+  if (isEmpty.value) return null
+
+  const firstNodeId = widgets.value[0].node.id
+  const allSameNode = widgets.value.every(({ node }) => node.id === firstNodeId)
+
+  return allSameNode ? widgets.value[0].node : null
+})
+
+const parentGroup = computed<LGraphGroup | null>(() => {
+  if (!targetNode.value || !getNodeParentGroup) return null
+  return getNodeParentGroup(targetNode.value)
+})
+
+const canShowLocateButton = computed(
+  () => showLocateButton && targetNode.value !== null
+)
+
+function handleLocateNode() {
+  if (!targetNode.value || !canvasStore.canvas) return
+
+  const graphNode = canvasStore.canvas.graph?.getNodeById(targetNode.value.id)
+  if (graphNode) {
+    canvasStore.canvas.animateToBounds(graphNode.boundingRect)
+  }
+}
+
+function writeWidgetValue(widget: IBaseWidget, value: WidgetValue) {
   widget.value = value
   widget.callback?.(value)
   canvasStore.canvas?.setDirty(true, true)
 }
 
-const isEmpty = computed(() => widgets.length === 0)
+function handleResetAllWidgets() {
+  for (const { widget, node: widgetNode } of widgetsProp) {
+    const spec = nodeDefStore.getInputSpecForWidget(widgetNode, widget.name)
+    const defaultValue = getWidgetDefaultValue(spec)
+    if (defaultValue !== undefined) {
+      writeWidgetValue(widget, defaultValue)
+    }
+  }
+}
 
-const displayLabel = computed(
-  () =>
-    label ??
-    (isEmpty.value
-      ? t('rightSidePanel.inputsNone')
-      : t('rightSidePanel.inputs'))
-)
+function handleWidgetValueUpdate(widget: IBaseWidget, newValue: WidgetValue) {
+  if (newValue === undefined) return
+  writeWidgetValue(widget, newValue)
+}
+
+function handleWidgetReset(widget: IBaseWidget, newValue: WidgetValue) {
+  writeWidgetValue(widget, newValue)
+}
+
+defineExpose({
+  widgetsContainer,
+  rootElement
+})
 </script>
 
 <template>
-  <PropertiesAccordionItem :is-empty>
-    <template #label>
-      <slot name="label">
-        {{ displayLabel }}
-      </slot>
-    </template>
-
-    <div v-if="!isEmpty" class="space-y-4 rounded-lg bg-interface-surface px-4">
-      <div
-        v-for="({ widget, node }, index) in widgets"
-        :key="`widget-${index}-${widget.name}`"
-        class="widget-item gap-1.5 col-span-full grid grid-cols-subgrid"
-      >
-        <div class="min-h-8">
-          <p v-if="widget.name" class="text-sm leading-8 p-0 m-0 line-clamp-1">
-            {{ widget.label || widget.name }}
-          </p>
+  <div ref="rootElement">
+    <PropertiesAccordionItem
+      v-model:collapse="collapse"
+      :enable-empty-state
+      :disabled="isEmpty"
+      :tooltip
+    >
+      <template #label>
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <span class="flex-1 flex items-center gap-2 min-w-0">
+            <span class="truncate">
+              <slot name="label">
+                {{ displayLabel }}
+              </slot>
+            </span>
+            <span
+              v-if="parentGroup"
+              class="text-xs text-muted-foreground truncate flex-1 text-right min-w-11"
+              :title="parentGroup.title"
+            >
+              {{ parentGroup.title }}
+            </span>
+          </span>
+          <Button
+            v-if="!isEmpty"
+            variant="textonly"
+            size="icon-sm"
+            class="subbutton shrink-0 size-8 cursor-pointer text-muted-foreground hover:text-base-foreground"
+            :title="t('rightSidePanel.resetAllParameters')"
+            :aria-label="t('rightSidePanel.resetAllParameters')"
+            @click.stop="handleResetAllWidgets"
+          >
+            <i class="icon-[lucide--rotate-ccw] size-4" />
+          </Button>
+          <Button
+            v-if="canShowLocateButton"
+            variant="textonly"
+            size="icon-sm"
+            class="subbutton shrink-0 mr-3 size-8 cursor-pointer text-muted-foreground hover:text-base-foreground"
+            :title="t('rightSidePanel.locateNode')"
+            :aria-label="t('rightSidePanel.locateNode')"
+            @click.stop="handleLocateNode"
+          >
+            <i class="icon-[lucide--locate] size-4" />
+          </Button>
         </div>
-        <component
-          :is="getWidgetComponent(widget)"
-          :widget="widget"
-          :model-value="useReactiveWidgetValue(widget)"
-          :node-id="String(node.id)"
-          :node-type="node.type"
-          :class="cn('col-span-1', shouldExpand(widget.type) && 'min-h-36')"
-          @update:model-value="
-            (value: string | number | boolean | object) =>
-              onWidgetValueChange(widget, value)
-          "
-        />
+      </template>
+
+      <template #empty><slot name="empty" /></template>
+
+      <div
+        ref="widgetsContainer"
+        class="space-y-2 rounded-lg px-4 pt-1 relative"
+      >
+        <TransitionGroup name="list-scale">
+          <WidgetItem
+            v-for="{ widget, node } in widgets"
+            :key="`${node.id}-${widget.name}-${widget.type}`"
+            :widget="widget"
+            :node="node"
+            :is-draggable="isDraggable"
+            :hidden-favorite-indicator="hiddenFavoriteIndicator"
+            :show-node-name="showNodeName"
+            :parents="parents"
+            :is-shown-on-parents="isWidgetShownOnParents(node, widget)"
+            @update:widget-value="handleWidgetValueUpdate(widget, $event)"
+            @reset-to-default="handleWidgetReset(widget, $event)"
+          />
+        </TransitionGroup>
       </div>
-    </div>
-  </PropertiesAccordionItem>
+    </PropertiesAccordionItem>
+  </div>
 </template>

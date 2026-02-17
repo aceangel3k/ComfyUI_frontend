@@ -1,32 +1,48 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { computed, ref, toValue, watchEffect } from 'vue'
+import { computed, provide, ref, watchEffect } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import EditableText from '@/components/common/EditableText.vue'
 import Tab from '@/components/tab/Tab.vue'
 import TabList from '@/components/tab/TabList.vue'
 import Button from '@/components/ui/button/Button.vue'
+import { useGraphHierarchy } from '@/composables/graph/useGraphHierarchy'
+import type { ProxyWidgetsProperty } from '@/core/schemas/proxyWidget'
+import { st } from '@/i18n'
 import { SubgraphNode } from '@/lib/litegraph/src/litegraph'
 import type { LGraphNode } from '@/lib/litegraph/src/litegraph'
 import { useSettingStore } from '@/platform/settings/settingStore'
 import { useCanvasStore } from '@/renderer/core/canvas/canvasStore'
+import { useExecutionStore } from '@/stores/executionStore'
 import { useRightSidePanelStore } from '@/stores/workspace/rightSidePanelStore'
 import type { RightSidePanelTab } from '@/stores/workspace/rightSidePanelStore'
-import { isLGraphNode } from '@/utils/litegraphUtil'
+import { resolveNodeDisplayName } from '@/utils/nodeTitleUtil'
 import { cn } from '@/utils/tailwindUtil'
 
+import TabError from './TabError.vue'
 import TabInfo from './info/TabInfo.vue'
-import TabParameters from './parameters/TabParameters.vue'
+import TabGlobalParameters from './parameters/TabGlobalParameters.vue'
+import TabNodes from './parameters/TabNodes.vue'
+import TabNormalInputs from './parameters/TabNormalInputs.vue'
+import TabSubgraphInputs from './parameters/TabSubgraphInputs.vue'
+import TabGlobalSettings from './settings/TabGlobalSettings.vue'
 import TabSettings from './settings/TabSettings.vue'
+import {
+  GetNodeParentGroupKey,
+  useFlatAndCategorizeSelectedItems
+} from './shared'
 import SubgraphEditor from './subgraph/SubgraphEditor.vue'
 
 const canvasStore = useCanvasStore()
+const executionStore = useExecutionStore()
 const rightSidePanelStore = useRightSidePanelStore()
 const settingStore = useSettingStore()
 const { t } = useI18n()
 
-const { selectedItems } = storeToRefs(canvasStore)
+const { findParentGroup } = useGraphHierarchy()
+
+const { selectedItems: directlySelectedItems } = storeToRefs(canvasStore)
 const { activeTab, isEditingSubgraph } = storeToRefs(rightSidePanelStore)
 
 const sidebarLocation = computed<'left' | 'right'>(() =>
@@ -40,29 +56,31 @@ const panelIcon = computed(() =>
     : 'icon-[lucide--panel-right]'
 )
 
-const hasSelection = computed(() => selectedItems.value.length > 0)
+const { flattedItems, selectedNodes, selectedGroups, nodeToParentGroup } =
+  useFlatAndCategorizeSelectedItems(directlySelectedItems)
 
-const selectedNodes = computed((): LGraphNode[] => {
-  return selectedItems.value.filter(isLGraphNode)
+const shouldShowGroupNames = computed(() => {
+  return !(
+    directlySelectedItems.value.length === 1 &&
+    (selectedGroups.value.length === 1 || selectedNodes.value.length === 1)
+  )
 })
 
-const isSubgraphNode = computed(() => {
-  return selectedNode.value instanceof SubgraphNode
+provide(GetNodeParentGroupKey, (node: LGraphNode) => {
+  if (!shouldShowGroupNames.value) return null
+  return nodeToParentGroup.value.get(node) ?? findParentGroup(node)
 })
 
-const isSingleNodeSelected = computed(() => selectedNodes.value.length === 1)
+const hasSelection = computed(() => flattedItems.value.length > 0)
 
-const selectedNode = computed(() => {
-  return isSingleNodeSelected.value ? selectedNodes.value[0] : null
+const selectedSingleNode = computed(() => {
+  return selectedNodes.value.length === 1 && flattedItems.value.length === 1
+    ? selectedNodes.value[0]
+    : null
 })
 
-const selectionCount = computed(() => selectedItems.value.length)
-
-const panelTitle = computed(() => {
-  if (isSingleNodeSelected.value && selectedNode.value) {
-    return selectedNode.value.title || selectedNode.value.type || 'Node'
-  }
-  return t('rightSidePanel.title', { count: selectionCount.value })
+const isSingleSubgraphNode = computed(() => {
+  return selectedSingleNode.value instanceof SubgraphNode
 })
 
 function closePanel() {
@@ -72,28 +90,58 @@ function closePanel() {
 type RightSidePanelTabList = Array<{
   label: () => string
   value: RightSidePanelTab
+  icon?: string
 }>
 
+//FIXME all errors if nothing selected?
+const selectedNodeErrors = computed(() =>
+  selectedNodes.value
+    .map((node) => executionStore.getNodeErrors(`${node.id}`))
+    .filter((nodeError) => !!nodeError)
+)
+
 const tabs = computed<RightSidePanelTabList>(() => {
-  const list: RightSidePanelTabList = [
-    {
-      label: () => t('rightSidePanel.parameters'),
-      value: 'parameters'
-    },
-    {
-      label: () => t('g.settings'),
-      value: 'settings'
-    }
-  ]
-  if (
-    !hasSelection.value ||
-    (isSingleNodeSelected.value && !isSubgraphNode.value)
-  ) {
+  const list: RightSidePanelTabList = []
+  if (selectedNodeErrors.value.length) {
     list.push({
-      label: () => t('rightSidePanel.info'),
-      value: 'info'
+      label: () => t('g.error'),
+      value: 'error',
+      icon: 'icon-[lucide--octagon-alert] bg-node-stroke-error ml-1'
     })
   }
+
+  list.push({
+    label: () =>
+      flattedItems.value.length > 1
+        ? t('rightSidePanel.nodes')
+        : t('rightSidePanel.parameters'),
+    value: 'parameters'
+  })
+
+  if (!hasSelection.value) {
+    list.push({
+      label: () => t('rightSidePanel.nodes'),
+      value: 'nodes'
+    })
+  }
+
+  if (hasSelection.value) {
+    if (selectedSingleNode.value && !isSingleSubgraphNode.value) {
+      list.push({
+        label: () => t('rightSidePanel.info'),
+        value: 'info'
+      })
+    }
+  }
+
+  list.push({
+    label: () =>
+      hasSelection.value
+        ? t('g.settings')
+        : t('rightSidePanel.globalSettings.title'),
+    value: 'settings'
+  })
+
   return list
 })
 
@@ -101,13 +149,47 @@ const tabs = computed<RightSidePanelTabList>(() => {
 watchEffect(() => {
   if (
     !tabs.value.some((tab) => tab.value === activeTab.value) &&
-    !(activeTab.value === 'subgraph' && isSubgraphNode.value)
+    !(activeTab.value === 'subgraph' && isSingleSubgraphNode.value)
   ) {
     rightSidePanelStore.openPanel(tabs.value[0].value)
   }
 })
 
+function resolveTitle() {
+  const items = flattedItems.value
+  const nodes = selectedNodes.value
+  const groups = selectedGroups.value
+
+  if (items.length === 0) {
+    return t('rightSidePanel.workflowOverview')
+  }
+  if (directlySelectedItems.value.length === 1) {
+    if (groups.length === 1) {
+      return groups[0].title || t('rightSidePanel.fallbackGroupTitle')
+    }
+    if (nodes.length === 1) {
+      const fallbackNodeTitle = t('rightSidePanel.fallbackNodeTitle')
+      return resolveNodeDisplayName(nodes[0], {
+        emptyLabel: fallbackNodeTitle,
+        untitledLabel: fallbackNodeTitle,
+        st
+      })
+    }
+  }
+  return t('rightSidePanel.title', { count: items.length })
+}
+
+const panelTitle = ref(resolveTitle())
+watchEffect(() => (panelTitle.value = resolveTitle()))
+
 const isEditing = ref(false)
+
+const allowTitleEdit = computed(() => {
+  return (
+    directlySelectedItems.value.length === 1 &&
+    (selectedGroups.value.length === 1 || selectedNodes.value.length === 1)
+  )
+})
 
 function handleTitleEdit(newTitle: string) {
   isEditing.value = false
@@ -115,38 +197,52 @@ function handleTitleEdit(newTitle: string) {
   const trimmedTitle = newTitle.trim()
   if (!trimmedTitle) return
 
-  const node = toValue(selectedNode)
+  const node = selectedGroups.value[0] || selectedNodes.value[0]
   if (!node) return
 
   if (trimmedTitle === node.title) return
 
   node.title = trimmedTitle
-  canvasStore.canvas?.setDirty(true, false)
+  panelTitle.value = trimmedTitle
+  canvasStore.canvas?.setDirty(true, true)
 }
 
 function handleTitleCancel() {
   isEditing.value = false
+}
+
+function handleProxyWidgetsUpdate(value: ProxyWidgetsProperty) {
+  if (!selectedSingleNode.value) return
+  ;(selectedSingleNode.value as SubgraphNode).properties.proxyWidgets = value
+  canvasStore.canvas?.setDirty(true, true)
 }
 </script>
 
 <template>
   <div
     data-testid="properties-panel"
-    class="flex size-full flex-col bg-interface-panel-surface"
+    class="flex size-full flex-col bg-comfy-menu-bg"
   >
     <!-- Panel Header -->
     <section class="pt-1">
       <div class="flex items-center justify-between pl-4 pr-3">
-        <h3 class="my-3.5 text-sm font-semibold line-clamp-2">
-          <EditableText
-            v-if="isSingleNodeSelected"
-            :model-value="panelTitle"
-            :is-editing="isEditing"
-            :input-attrs="{ 'data-testid': 'node-title-input' }"
-            @edit="handleTitleEdit"
-            @cancel="handleTitleCancel"
-            @dblclick="isEditing = true"
-          />
+        <h3 class="my-3.5 text-sm font-semibold line-clamp-2 cursor-default">
+          <template v-if="allowTitleEdit">
+            <EditableText
+              :model-value="panelTitle"
+              :is-editing="isEditing"
+              :input-attrs="{ 'data-testid': 'node-title-input' }"
+              class="cursor-text"
+              @edit="handleTitleEdit"
+              @cancel="handleTitleCancel"
+              @click="isEditing = true"
+            />
+            <i
+              v-if="!isEditing"
+              class="icon-[lucide--pencil] size-4 text-muted-foreground ml-2 content-center relative top-[2px] hover:text-base-foreground cursor-pointer shrink-0"
+              @click="isEditing = true"
+            />
+          </template>
           <template v-else>
             {{ panelTitle }}
           </template>
@@ -154,7 +250,7 @@ function handleTitleCancel() {
 
         <div class="flex gap-2">
           <Button
-            v-if="isSubgraphNode"
+            v-if="isSingleSubgraphNode"
             variant="secondary"
             size="icon"
             :class="cn(isEditingSubgraph && 'bg-secondary-background-selected')"
@@ -177,7 +273,7 @@ function handleTitleCancel() {
           </Button>
         </div>
       </div>
-      <nav v-if="hasSelection" class="px-4 pb-2 pt-1">
+      <nav class="px-4 pb-2 pt-1 overflow-x-auto">
         <TabList
           :model-value="activeTab"
           @update:model-value="
@@ -189,10 +285,11 @@ function handleTitleCancel() {
           <Tab
             v-for="tab in tabs"
             :key="tab.value"
-            class="text-sm py-1 px-2 font-inter"
+            class="text-sm py-1 px-2 font-inter transition-all active:scale-95"
             :value="tab.value"
           >
             {{ tab.label() }}
+            <i v-if="tab.icon" :class="cn(tab.icon, 'size-4')" />
           </Tab>
         </TabList>
       </nav>
@@ -200,25 +297,31 @@ function handleTitleCancel() {
 
     <!-- Panel Content -->
     <div class="scrollbar-thin flex-1 overflow-y-auto">
-      <div
-        v-if="!hasSelection"
-        class="flex size-full p-4 items-start justify-start text-sm text-muted-foreground"
-      >
-        {{ $t('rightSidePanel.noSelection') }}
-      </div>
+      <template v-if="!hasSelection">
+        <TabGlobalParameters v-if="activeTab === 'parameters'" />
+        <TabNodes v-else-if="activeTab === 'nodes'" />
+        <TabGlobalSettings v-else-if="activeTab === 'settings'" />
+      </template>
       <SubgraphEditor
-        v-else-if="isSubgraphNode && isEditingSubgraph"
-        :node="selectedNode"
+        v-else-if="isSingleSubgraphNode && isEditingSubgraph"
+        :node="selectedSingleNode"
       />
       <template v-else>
-        <TabParameters
-          v-if="activeTab === 'parameters'"
+        <TabError v-if="activeTab === 'error'" :errors="selectedNodeErrors" />
+        <TabSubgraphInputs
+          v-if="activeTab === 'parameters' && isSingleSubgraphNode"
+          :node="selectedSingleNode as SubgraphNode"
+          @update:proxy-widgets="handleProxyWidgetsUpdate"
+        />
+        <TabNormalInputs
+          v-else-if="activeTab === 'parameters'"
           :nodes="selectedNodes"
+          :must-show-node-title="selectedGroups.length > 0"
         />
         <TabInfo v-else-if="activeTab === 'info'" :nodes="selectedNodes" />
         <TabSettings
           v-else-if="activeTab === 'settings'"
-          :nodes="selectedNodes"
+          :nodes="flattedItems"
         />
       </template>
     </div>

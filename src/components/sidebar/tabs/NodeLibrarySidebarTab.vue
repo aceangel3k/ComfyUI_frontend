@@ -89,8 +89,9 @@
           <SearchBox
             ref="searchBoxRef"
             v-model:model-value="searchQuery"
+            data-testid="node-library-search"
             class="node-lib-search-box"
-            :placeholder="$t('g.searchNodes') + '...'"
+            :placeholder="$t('g.searchPlaceholder', { subject: $t('g.nodes') })"
             filter-icon="pi pi-filter"
             :filters
             @search="handleSearch"
@@ -117,9 +118,13 @@
           />
           <TreeExplorer
             v-model:expanded-keys="expandedKeys"
+            data-testid="node-library-tree"
             class="node-lib-tree-explorer"
             :root="renderedRoot"
           >
+            <template #folder="{ node }">
+              <NodeTreeFolder :node="node" />
+            </template>
             <template #node="{ node }">
               <NodeTreeLeaf :node="node" :open-node-help="openHelp" />
             </template>
@@ -139,7 +144,15 @@ import { storeToRefs } from 'pinia'
 import Divider from 'primevue/divider'
 import Popover from 'primevue/popover'
 import type { Ref } from 'vue'
-import { computed, h, nextTick, onMounted, ref, render } from 'vue'
+import {
+  computed,
+  getCurrentInstance,
+  h,
+  nextTick,
+  onMounted,
+  ref,
+  render
+} from 'vue'
 
 import SearchBox from '@/components/common/SearchBox.vue'
 import type { SearchFilter } from '@/components/common/SearchFilterChip.vue'
@@ -148,6 +161,7 @@ import NodePreview from '@/components/node/NodePreview.vue'
 import NodeSearchFilter from '@/components/searchbox/NodeSearchFilter.vue'
 import SidebarTabTemplate from '@/components/sidebar/tabs/SidebarTabTemplate.vue'
 import NodeHelpPage from '@/components/sidebar/tabs/nodeLibrary/NodeHelpPage.vue'
+import NodeTreeFolder from '@/components/sidebar/tabs/nodeLibrary/NodeTreeFolder.vue'
 import NodeTreeLeaf from '@/components/sidebar/tabs/nodeLibrary/NodeTreeLeaf.vue'
 import Button from '@/components/ui/button/Button.vue'
 import { useTreeExpansion } from '@/composables/useTreeExpansion'
@@ -171,6 +185,8 @@ import type { FuseFilterWithValue } from '@/utils/fuseUtil'
 
 import NodeBookmarkTreeExplorer from './nodeLibrary/NodeBookmarkTreeExplorer.vue'
 
+const instance = getCurrentInstance()!
+const appContext = instance.appContext
 const nodeDefStore = useNodeDefStore()
 const nodeBookmarkStore = useNodeBookmarkStore()
 const nodeHelpStore = useNodeHelpStore()
@@ -272,6 +288,7 @@ const renderedRoot = computed<TreeExplorerNode<ComfyNodeDefImpl>>(() => {
       draggable: node.leaf,
       renderDragPreview(container) {
         const vnode = h(NodePreview, { nodeDef: node.data })
+        vnode.appContext = appContext
         render(vnode, container)
         return () => {
           render(null, container)

@@ -8,6 +8,7 @@ import { getComfyApiBaseUrl, getComfyPlatformBaseUrl } from '@/config/comfyApi'
 import { t } from '@/i18n'
 import { isCloud } from '@/platform/distribution/types'
 import { useTelemetry } from '@/platform/telemetry'
+import type { CheckoutAttributionMetadata } from '@/platform/telemetry/types'
 import {
   FirebaseAuthStoreError,
   useFirebaseAuthStore
@@ -28,6 +29,7 @@ export type CloudSubscriptionStatusResponse = NonNullable<
 function useSubscriptionInternal() {
   const subscriptionStatus = ref<CloudSubscriptionStatusResponse | null>(null)
   const telemetry = useTelemetry()
+  const isInitialized = ref(false)
 
   const isSubscribedOrIsNotCloud = computed(() => {
     if (!isCloud || !window.__CONFIG__?.subscription_required) return true
@@ -37,7 +39,8 @@ function useSubscriptionInternal() {
   const { reportError, accessBillingPortal } = useFirebaseAuthActions()
   const { showSubscriptionRequiredDialog } = useDialogService()
 
-  const { getAuthHeader } = useFirebaseAuthStore()
+  const firebaseAuthStore = useFirebaseAuthStore()
+  const { getFirebaseAuthHeader } = firebaseAuthStore
   const { wrapWithErrorHandlingAsync } = useErrorHandling()
 
   const { isLoggedIn } = useCurrentUser()
@@ -92,7 +95,21 @@ function useSubscriptionInternal() {
       : baseName
   })
 
-  const buildApiUrl = (path: string) => `${getComfyApiBaseUrl()}${path}`
+  function buildApiUrl(path: string): string {
+    return `${getComfyApiBaseUrl()}${path}`
+  }
+
+  const getCheckoutAttributionForCloud =
+    async (): Promise<CheckoutAttributionMetadata> => {
+      if (__DISTRIBUTION__ !== 'cloud') {
+        return {}
+      }
+
+      const { getCheckoutAttribution } =
+        await import('@/platform/telemetry/utils/checkoutAttribution')
+
+      return getCheckoutAttribution()
+    }
 
   const fetchStatus = wrapWithErrorHandlingAsync(
     fetchSubscriptionStatus,
@@ -167,7 +184,7 @@ function useSubscriptionInternal() {
    * @returns Subscription status or null if no subscription exists
    */
   async function fetchSubscriptionStatus(): Promise<CloudSubscriptionStatusResponse | null> {
-    const authHeader = await getAuthHeader()
+    const authHeader = await getFirebaseAuthHeader()
     if (!authHeader) {
       throw new FirebaseAuthStoreError(t('toastMessages.userNotAuthenticated'))
     }
@@ -193,6 +210,7 @@ function useSubscriptionInternal() {
 
     const statusData = await response.json()
     subscriptionStatus.value = statusData
+
     return statusData
   }
 
@@ -200,10 +218,19 @@ function useSubscriptionInternal() {
     () => isLoggedIn.value,
     async (loggedIn) => {
       if (loggedIn) {
-        await fetchSubscriptionStatus()
+        try {
+          await fetchSubscriptionStatus()
+        } catch (error) {
+          // Network errors are expected during navigation/component unmount
+          // and when offline - log for debugging but don't surface to user
+          console.error('Failed to fetch subscription status:', error)
+        } finally {
+          isInitialized.value = true
+        }
       } else {
         subscriptionStatus.value = null
         stopCancellationWatcher()
+        isInitialized.value = true
       }
     },
     { immediate: true }
@@ -211,12 +238,13 @@ function useSubscriptionInternal() {
 
   const initiateSubscriptionCheckout =
     async (): Promise<CloudSubscriptionCheckoutResponse> => {
-      const authHeader = await getAuthHeader()
+      const authHeader = await getFirebaseAuthHeader()
       if (!authHeader) {
         throw new FirebaseAuthStoreError(
           t('toastMessages.userNotAuthenticated')
         )
       }
+      const checkoutAttribution = await getCheckoutAttributionForCloud()
 
       const response = await fetch(
         buildApiUrl('/customers/cloud-subscription-checkout'),
@@ -225,7 +253,8 @@ function useSubscriptionInternal() {
           headers: {
             ...authHeader,
             'Content-Type': 'application/json'
-          }
+          },
+          body: JSON.stringify(checkoutAttribution)
         }
       )
 
@@ -244,6 +273,7 @@ function useSubscriptionInternal() {
   return {
     // State
     isActiveSubscription: isSubscribedOrIsNotCloud,
+    isInitialized,
     isCancelled,
     formattedRenewalDate,
     formattedEndDate,
